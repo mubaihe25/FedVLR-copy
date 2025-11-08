@@ -8,6 +8,7 @@
 
 1. The code is implemented with `Python ~= 3.8` and `torch~=2.4.0+cu118`;
 2. Other requirements can be installed by `pip install -r requirements.txt`.
+3. For multimodal dataset processing, please refer to [mtics/MMRec_Dataset_Preprocessing](https://github.com/mtics/MMRec_Dataset_Preprocessing)
 
 ## Quick Start
 
