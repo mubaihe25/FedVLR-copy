@@ -10,22 +10,22 @@ learner: 'SGD'
 fusion_module: 'moe' # 'moe', 'sum', 'attention', 'mlp', 'gate'
 num_heads: 8 # number of heads in the attention module
 
-##hyper_parameters: [ "alpha", "beta", "lr", "l2_reg" ]
-#hyper_parameters: [ "lr", "l2_reg" ]
-hyper_parameters: [ ]
-
-
-##alpha: [ 1e-1,1e-2,1e-3,1e-4 ]
-##beta: [ 1e-1,1e-2,1e-3,1e-4 ]
-#lr: [ 1e-1,1e-2,1e-3,1e-4 ]
-#l2_reg: [ 1e-4,1e-5,1e-6,1e-7,1e-8 ]
-
-alpha: 1e-1
-beta: 1e-1
-lr: 1e-1
-l2_reg: 1e-7
-
 use_neg_sampling: True
 
+# hyper_parameters: [ "alpha", "beta", "lr", "l2_reg" ]
+# # hyper_parameters: [ "lr", "l2_reg" ]
 
-save_model: False
+#hyper_parameters: [ ]
+alpha: 1e-4
+beta: 1e-2
+# lr: 1e-1
+# l2_reg: 1e-4
+
+# hyper_parameters: [ "alpha", "beta", "lr", "l2_reg" ]
+hyper_parameters: [ "lr", "l2_reg"]
+
+# alpha: [ 1e-1,1e-2,1e-3,1e-4 ]
+# beta: [ 1e-1,1e-2,1e-3,1e-4 ]
+
+lr: [ 1e-1,1e-2,1e-3,1e-4 ]
+l2_reg: [ 1e-4,1e-5,1e-6,1e-7,1e-8, 0 ]

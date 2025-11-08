@@ -56,7 +56,7 @@ eval_batch_size: 4096
 #                     Training                       #
 ######################################################
 early_stop: True
-num_iterations: 100
+num_iterations: 10
 local_epochs: 5
 batch_size: 2048
 tol: 1e-4
@@ -66,7 +66,8 @@ hardware: "gpu"
 gpu_id: 0
 require_training: True
 optimizer: "adam"
-save_model: False
+save_model: True
+save_results: True
 paths:
   log: 'outputs/logs/{}/{}/'
   checkpoint: 'outputs/checkpoints/{}/{}/'
@@ -117,7 +118,7 @@ req_training: True
 #embedding_size: 3780
 
 # training settings
-epochs: 100
+epochs: 100 # 100
 stopping_step: 20
 train_batch_size: 2048
 learner: adam
@@ -130,3 +131,8 @@ use_neg_sampling: True
 
 # evaluation settings
 topk: [10, 20, 50]
+
+# ablation settings
+txt_mode: "noise"
+vis_mode: None
+id_mode: None

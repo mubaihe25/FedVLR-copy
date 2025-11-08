@@ -9,6 +9,7 @@ from torch.nn.modules.utils import _quadruple
 import numbers
 import numpy as np
 from PIL import Image
+
 _pil_interpolation_to_str = {
     Image.NEAREST: 'PIL.Image.NEAREST',
     Image.BILINEAR: 'PIL.Image.BILINEAR',
@@ -64,7 +65,7 @@ def mask_batch_text_tokens(
     # 10% of the time, we replace masked input tokens with random word
     indices_random = torch.bernoulli(
         torch.full(labels.shape, 0.5)
-        ).bool() & masked_indices & ~indices_replaced
+    ).bool() & masked_indices & ~indices_replaced
     random_words = torch.randint(
         len(tokenizer), labels.shape,
         dtype=torch.long)  # len(tokenizer) == #vocab
@@ -123,10 +124,10 @@ def get_padding(image, max_w, max_h, pad_all=False):
     if pad_all:
         h_padding /= 2
         v_padding /= 2
-        l_pad = h_padding if h_padding % 1 == 0 else h_padding+0.5
-        t_pad = v_padding if v_padding % 1 == 0 else v_padding+0.5
-        r_pad = h_padding if h_padding % 1 == 0 else h_padding-0.5
-        b_pad = v_padding if v_padding % 1 == 0 else v_padding-0.5
+        l_pad = h_padding if h_padding % 1 == 0 else h_padding + 0.5
+        t_pad = v_padding if v_padding % 1 == 0 else v_padding + 0.5
+        r_pad = h_padding if h_padding % 1 == 0 else h_padding - 0.5
+        b_pad = v_padding if v_padding % 1 == 0 else v_padding - 0.5
     else:
         l_pad, t_pad = 0, 0
         r_pad, b_pad = h_padding, v_padding
@@ -164,7 +165,7 @@ class ImagePad(object):
             self.fill, self.padding_mode)
 
     def __repr__(self):
-        return self.__class__.__name__ + '(padding={0}, fill={1}, padding_mode={2})'.\
+        return self.__class__.__name__ + '(padding={0}, fill={1}, padding_mode={2})'. \
             format(self.fill, self.padding_mode)
 
 
@@ -192,11 +193,11 @@ def get_resize_size(image, max_size):
         width, height = image.size
 
     if height >= width:
-        ratio = width*1./height
+        ratio = width * 1. / height
         new_height = max_size
         new_width = new_height * ratio
     else:
-        ratio = height*1./width
+        ratio = height * 1. / width
         new_width = max_size
         new_height = new_width * ratio
     size = (int(new_height), int(new_width))
@@ -260,6 +261,7 @@ def get_imagenet_transform(min_size=600, max_size=1000):
 class ImageNorm(object):
     """Apply Normalization to Image Pixels on GPU
     """
+
     def __init__(self, mean, std):
         self.mean = torch.tensor(mean).cuda().view(1, 1, 3, 1, 1)
         self.std = torch.tensor(std).cuda().view(1, 1, 3, 1, 1)
@@ -304,7 +306,7 @@ def chunk_list(examples, chunk_size=2, pad_to_divisible=True):
     n_chunks = int(n_examples / chunk_size)
     n_chunks = n_chunks + 1 if remainder > 0 else n_chunks
     for i in range(n_chunks):
-        chunked_examples.append(examples[i*chunk_size: (i+1)*chunk_size])
+        chunked_examples.append(examples[i * chunk_size: (i + 1) * chunk_size])
     return chunked_examples
 
 
@@ -361,9 +363,10 @@ def repeat_tensor_rows(raw_tensor, row_repeats):
         return raw_tensor.index_select(0, indices)
 
 
-
 #### Data utils
 import io
+
+
 def load_decompress_img_from_lmdb_value(lmdb_value):
     """
     Args:
@@ -377,4 +380,3 @@ def load_decompress_img_from_lmdb_value(lmdb_value):
     io_stream = io.BytesIO(lmdb_value)
     img = Image.open(io_stream, mode="r")
     return img
-

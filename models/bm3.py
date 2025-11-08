@@ -64,7 +64,9 @@ class BM3(GeneralRecommender):
                              [1] * inter_M.nnz))
         data_dict.update(dict(zip(zip(inter_M_t.row + self.n_users, inter_M_t.col),
                                   [1] * inter_M_t.nnz)))
-        A._update(data_dict)
+        # 使用字典赋值替代已弃用的_update方法
+        for (i, j), val in data_dict.items():
+            A[i, j] = val
         # norm adj matrix
         sumArr = (A > 0).sum(axis=1)
         # add epsilon to avoid Devide by zero Warning

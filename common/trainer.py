@@ -15,7 +15,7 @@ import torch.optim as optim
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
 from utils.topk_evaluator import TopKEvaluator
-from utils.utils import early_stopping, dict2str
+from utils.utils import early_stopping, dict2str, get_resource_usage_gb
 
 
 class AbstractTrainer(object):
@@ -29,31 +29,27 @@ class AbstractTrainer(object):
         self.model = model
 
     def fit(self, train_data):
-        r"""Train the model based on the train data.
-
-        """
-        raise NotImplementedError('Method [next] should be implemented.')
+        r"""Train the model based on the train data."""
+        raise NotImplementedError("Method [next] should be implemented.")
 
     def evaluate(self, eval_data):
-        r"""Evaluate the model based on the eval data.
+        r"""Evaluate the model based on the eval data."""
 
-        """
-
-        raise NotImplementedError('Method [next] should be implemented.')
+        raise NotImplementedError("Method [next] should be implemented.")
 
 
 class Trainer(AbstractTrainer):
     r"""The basic Trainer for basic training and evaluation strategies in recommender systems. This class defines common
-    functions for training and evaluation processes of most recommender system models, including fit(), evaluate(),
-   and some other features helpful for model training and evaluation.
+     functions for training and evaluation processes of most recommender system models, including fit(), evaluate(),
+    and some other features helpful for model training and evaluation.
 
-    Generally speaking, this class can serve most recommender system models, If the training process of the model is to
-    simply optimize a single loss without involving any complex training strategies, such as adversarial learning,
-    pre-training and so on.
+     Generally speaking, this class can serve most recommender system models, If the training process of the model is to
+     simply optimize a single loss without involving any complex training strategies, such as adversarial learning,
+     pre-training and so on.
 
-    Initializing the Trainer needs two parameters: `config` and `model`. `config` records the parameters information
-    for controlling training and evaluation, such as `learning_rate`, `epochs`, `eval_step` and so on.
-    More information can be found in [placeholder]. `model` is the instantiated object of a Model Class.
+     Initializing the Trainer needs two parameters: `config` and `model`. `config` records the parameters information
+     for controlling training and evaluation, such as `learning_rate`, `epochs`, `eval_step` and so on.
+     More information can be found in [placeholder]. `model` is the instantiated object of a Model Class.
 
     """
 
@@ -61,28 +57,28 @@ class Trainer(AbstractTrainer):
         super(Trainer, self).__init__(config, model)
 
         self.logger = getLogger()
-        self.learner = config['learner']
-        self.learning_rate = config['learning_rate']
-        self.epochs = config['epochs']
-        self.eval_step = min(config['eval_step'], self.epochs)
-        self.stopping_step = config['stopping_step']
-        self.clip_grad_norm = config['clip_grad_norm']
-        self.valid_metric = config['valid_metric'].lower()
-        self.valid_metric_bigger = config['valid_metric_bigger']
-        self.test_batch_size = config['eval_batch_size']
-        self.device = config['device']
+        self.learner = config["learner"]
+        self.learning_rate = config["learning_rate"]
+        self.epochs = config["epochs"]
+        self.eval_step = min(config["eval_step"], self.epochs)
+        self.stopping_step = config["stopping_step"]
+        self.clip_grad_norm = config["clip_grad_norm"]
+        self.valid_metric = config["valid_metric"].lower()
+        self.valid_metric_bigger = config["valid_metric_bigger"]
+        self.test_batch_size = config["eval_batch_size"]
+        self.device = config["device"]
         self.weight_decay = 0.0
-        if config['weight_decay'] is not None:
-            wd = config['weight_decay']
+        if config["weight_decay"] is not None:
+            wd = config["weight_decay"]
             self.weight_decay = eval(wd) if isinstance(wd, str) else wd
 
-        self.req_training = config['req_training']
+        self.req_training = config["req_training"]
 
         self.cur_step = 0
 
         tmp_dd = {}
-        for j, k in list(itertools.product(config['metrics'], config['topk'])):
-            tmp_dd[f'{j.lower()}@{k}'] = 0.0
+        for j, k in list(itertools.product(config["metrics"], config["topk"])):
+            tmp_dd[f"{j.lower()}@{k}"] = 0.0
         self.best_valid_score = -1
         self.best_valid_result = tmp_dd
         self.best_test_upon_valid = tmp_dd
@@ -90,40 +86,45 @@ class Trainer(AbstractTrainer):
         self.optimizer = self._build_optimizer()
 
         # fac = lambda epoch: 0.96 ** (epoch / 50)
-        lr_scheduler = config['learning_rate_scheduler']  # check zero?
+        lr_scheduler = config["learning_rate_scheduler"]  # check zero?
 
         fac = lambda epoch: lr_scheduler[0] ** (epoch / lr_scheduler[1])
 
         scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=fac)
         self.lr_scheduler = scheduler
 
-        self.eval_type = config['eval_type']
+        self.eval_type = config["eval_type"]
         self.evaluator = TopKEvaluator(config)
 
         self.item_tensor = None
         self.tot_item_num = None
         self.mg = mg
-        self.alpha1 = config['alpha1']
-        self.alpha2 = config['alpha2']
-        self.beta = config['beta']
+        self.alpha1 = config["alpha1"]
+        self.alpha2 = config["alpha2"]
+        self.beta = config["beta"]
 
     def _build_optimizer(self):
-        r"""Init the Optimizer
+        """初始化优化器"""
+        optimizer_map = {
+            "adam": optim.Adam,
+            "sgd": optim.SGD,
+            "adagrad": optim.Adagrad,
+            "rmsprop": optim.RMSprop,
+        }
 
-        Returns:
-            torch.optim: the optimizer
-        """
-        if self.learner.lower() == 'adam':
-            optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        elif self.learner.lower() == 'sgd':
-            optimizer = optim.SGD(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        elif self.learner.lower() == 'adagrad':
-            optimizer = optim.Adagrad(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        elif self.learner.lower() == 'rmsprop':
-            optimizer = optim.RMSprop(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer_class = optimizer_map.get(self.learner.lower())
+        if optimizer_class:
+            optimizer = optimizer_class(
+                self.model.parameters(),
+                lr=self.learning_rate,
+                weight_decay=self.weight_decay,
+            )
         else:
-            self.logger.warning('Received unrecognized optimizer, set default Adam optimizer')
+            self.logger.warning(
+                "Received unrecognized optimizer, set default Adam optimizer"
+            )
             optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+
         return optimizer
 
     def _train_epoch(self, train_data, epoch_idx, loss_func=None):
@@ -155,13 +156,21 @@ class Trainer(AbstractTrainer):
             if isinstance(losses, tuple):
                 loss = sum(losses)
                 loss_tuple = tuple(per_loss.item() for per_loss in losses)
-                total_loss = loss_tuple if total_loss is None else tuple(map(sum, zip(total_loss, loss_tuple)))
+                total_loss = (
+                    loss_tuple
+                    if total_loss is None
+                    else tuple(map(sum, zip(total_loss, loss_tuple)))
+                )
             else:
                 loss = losses
-                total_loss = losses.item() if total_loss is None else total_loss + losses.item()
+                total_loss = (
+                    losses.item() if total_loss is None else total_loss + losses.item()
+                )
 
             if self._check_nan(loss):
-                self.logger.info(f'Loss is nan at epoch: {epoch_idx}, batch index: {batch_idx}. Exiting.')
+                self.logger.info(
+                    f"Loss is nan at epoch: {epoch_idx}, batch index: {batch_idx}. Exiting."
+                )
                 return loss, torch.tensor(0.0)
 
             if self.mg and batch_idx % self.beta == 0:
@@ -178,7 +187,9 @@ class Trainer(AbstractTrainer):
                     loss = losses
 
                 if self._check_nan(loss):
-                    self.logger.info(f'Loss is nan at epoch: {epoch_idx}, batch index: {batch_idx}. Exiting.')
+                    self.logger.info(
+                        f"Loss is nan at epoch: {epoch_idx}, batch index: {batch_idx}. Exiting."
+                    )
                     return loss, torch.tensor(0.0)
                 second_loss = -1 * self.alpha2 * loss
                 second_loss.backward()
@@ -189,6 +200,9 @@ class Trainer(AbstractTrainer):
                 clip_grad_norm_(self.model.parameters(), **self.clip_grad_norm)
             self.optimizer.step()
             loss_batches.append(loss.detach())
+
+        # 执行学习率调度器的step操作，每个epoch一次
+        self.lr_scheduler.step()
 
         return total_loss, loss_batches
 
@@ -203,7 +217,11 @@ class Trainer(AbstractTrainer):
             dict: valid result
         """
         valid_result = self.evaluate(valid_data)
-        valid_score = valid_result[self.valid_metric] if self.valid_metric else valid_result['NDCG@20']
+        valid_score = (
+            valid_result[self.valid_metric]
+            if self.valid_metric
+            else valid_result["NDCG@20"]
+        )
         return valid_score, valid_result
 
     def _check_nan(self, loss):
@@ -212,15 +230,29 @@ class Trainer(AbstractTrainer):
             return True
 
     def _generate_train_loss_output(self, epoch_idx, s_time, e_time, losses):
-        train_loss_output = f'>>> [Epoch {epoch_idx + 1}/{self.epochs}][Train] Time: {e_time - s_time:.2f}s'
+        
+        # 统计内存和显存使用情况（单位：GB）
+        resource = get_resource_usage_gb()
+        self.logger.info(
+            f">>> [Epoch {epoch_idx + 1}/{self.epochs}][Train] "
+            f"RAM: {resource['used_mem_gb']:.2f}GB / {resource['total_mem_gb']:.2f}GB, "
+            f"GPU: {resource['used_gpu_gb']:.2f}GB / {resource['total_gpu_gb']:.2f}GB"
+        )
+        
+        train_loss_output = f">>> [Epoch {epoch_idx + 1}/{self.epochs}][Train] Time: {e_time - s_time:.2f}s, "
+        
         if isinstance(losses, tuple):
-            loss_details = ', '.join(f'Loss {idx + 1}: {loss:.4f}' for idx, loss in enumerate(losses))
-            train_loss_output += f', {loss_details}'
+            loss_details = ", ".join(
+                f"Loss {idx + 1}: {loss:.4f}" for idx, loss in enumerate(losses)
+            )
+            train_loss_output += f" {loss_details}"
         else:
-            train_loss_output += f', Loss: {losses:.4f}'
+            train_loss_output += f" Loss: {losses:.4f}"
         return train_loss_output
 
-    def fit(self, train_data, valid_data=None, test_data=None, saved=False, verbose=True):
+    def fit(
+        self, train_data, valid_data=None, test_data=None, saved=False, verbose=True
+    ):
         r"""Train the model based on the train data and the valid data.
 
         Args:
@@ -243,12 +275,16 @@ class Trainer(AbstractTrainer):
                 # 检测到NaN损失，中断训练
                 break
 
-            self.lr_scheduler.step()
-
-            self.train_loss_dict[epoch_idx] = sum(train_loss) if isinstance(train_loss, tuple) else train_loss
+            self.train_loss_dict[epoch_idx] = (
+                sum(train_loss) if isinstance(train_loss, tuple) else train_loss
+            )
             training_end_time = time()
-            train_loss_output = \
-                self._generate_train_loss_output(epoch_idx, training_start_time, training_end_time, train_loss)
+            
+            # Output the training loss
+            
+            train_loss_output = self._generate_train_loss_output(
+                epoch_idx, training_start_time, training_end_time, train_loss
+            )
             post_info = self.model.post_epoch_processing()
             if verbose:
                 self.logger.info(train_loss_output)
@@ -260,22 +296,36 @@ class Trainer(AbstractTrainer):
             if (epoch_idx + 1) % self.eval_step == 0:
                 valid_start_time = time()
                 valid_score, valid_result = self._valid_epoch(valid_data)
-                self.best_valid_score, self.cur_step, stop_flag, update_flag = early_stopping(
-                    valid_score, self.best_valid_score, self.cur_step,
-                    max_step=self.stopping_step, bigger=self.valid_metric_bigger)
+                self.best_valid_score, self.cur_step, stop_flag, update_flag = (
+                    early_stopping(
+                        valid_score,
+                        self.best_valid_score,
+                        self.cur_step,
+                        max_step=self.stopping_step,
+                        bigger=self.valid_metric_bigger,
+                    )
+                )
                 valid_end_time = time()
-                valid_score_output = ">>> [Epoch %d/%d][Valid] Time: %.2fs, Score: %.4f" % \
-                                     (epoch_idx + 1, self.epochs, valid_end_time - valid_start_time, valid_score)
-                valid_result_output = '[Valid] ' + dict2str(valid_result)
+                valid_score_output = (
+                    ">>> [Epoch %d/%d][Valid] Time: %.2fs, Score: %.4f"
+                    % (
+                        epoch_idx + 1,
+                        self.epochs,
+                        valid_end_time - valid_start_time,
+                        valid_score,
+                    )
+                )
+                valid_result_output = "[Valid] " + dict2str(valid_result)
                 # test
                 _, test_result = self._valid_epoch(test_data)
                 if verbose:
                     self.logger.info(valid_score_output)
                     self.logger.info(valid_result_output)
-                    self.logger.info('[Test]  ' + dict2str(test_result))
+                    self.logger.info("[Test]  " + dict2str(test_result))
                 if update_flag:
-                    update_output = '-' * 5 + ' [' + self.config['model'] + \
-                                    '] Best Valid Results Updated! ' + '-' * 5
+                    update_output = (
+                        "-" * 5 + " [" + self.config["model"] + "] Best Valid Results Updated! " + "-" * 5
+                    )
                     if verbose:
                         self.logger.info(update_output)
                     self.best_valid_result = valid_result
@@ -285,15 +335,19 @@ class Trainer(AbstractTrainer):
             if epoch_idx > 1:
                 cur_loss = self.train_loss_dict[epoch_idx]
                 last_loss = self.train_loss_dict[epoch_idx - 1]
-                if abs(cur_loss - last_loss) / (cur_loss + 1e-6) < self.config['tol']:
+                if (abs(cur_loss - last_loss) / abs(cur_loss + 1e-6)< self.config["tol"]):
                     stop_flag = True
 
             if stop_flag:
-                stop_output = '████ Finished training, Best valid results are in Epoch %d ████' % \
-                              (epoch_idx - self.cur_step * self.eval_step)
+                stop_output = (
+                    "████ Finished training, Best valid results are in Epoch %d ████"
+                    % (epoch_idx - self.cur_step * self.eval_step)
+                )
                 if verbose:
                     self.logger.info(stop_output)
-                break
+
+                if self.config["early_stop"]:
+                    break
 
         return self.best_valid_score, self.best_valid_result, self.best_test_upon_valid
 
@@ -314,9 +368,13 @@ class Trainer(AbstractTrainer):
             # mask out pos items
             scores[masked_items[0], masked_items[1]] = -1e10
             # rank and get top-k
-            _, topk_index = torch.topk(scores, max(self.config['topk']), dim=-1)  # nusers x topk
+            _, topk_index = torch.topk(
+                scores, max(self.config["topk"]), dim=-1
+            )  # nusers x topk
             batch_matrix_list.append(topk_index)
-        return self.evaluator.evaluate(batch_matrix_list, eval_data, is_test=is_test, idx=idx)
+        return self.evaluator.evaluate(
+            batch_matrix_list, eval_data, is_test=is_test, idx=idx
+        )
 
     def plot_train_loss(self, show=True, save_path=None):
         r"""Plot the train loss in each epoch
@@ -331,8 +389,8 @@ class Trainer(AbstractTrainer):
         values = [float(self.train_loss_dict[epoch]) for epoch in epochs]
         plt.plot(epochs, values)
         plt.xticks(epochs)
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
         if show:
             plt.show()
         if save_path:

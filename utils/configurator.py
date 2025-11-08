@@ -10,10 +10,11 @@ import re
 
 import torch
 import yaml
+from logging import getLogger
 
 
 class Config(object):
-    """ Configurator module that load the defined parameters.
+    """Configurator module that load the defined parameters.
 
     Configurator module will first load the default parameters from the fixed properties in RecBole and then
     load parameters from the external input.
@@ -53,11 +54,14 @@ class Config(object):
             config_file_list (list of str): the external config file, it allows multiple config files, default is None.
             config_dict (dict): the external parameter dictionaries, default is None.
         """
+        # 初始化 logger
+        self.logger = getLogger()
+
         # load dataset config file yaml
         if config_dict is None:
             config_dict = {}
-        config_dict['model'] = model
-        config_dict['dataset'] = dataset
+        config_dict["model"] = model
+        config_dict["dataset"] = dataset
         # model type
         self.final_config_dict = self._load_dataset_model_config(config_dict, mg)
         # config in cmd and main.py are latest
@@ -71,84 +75,131 @@ class Config(object):
         file_list = []
         # get dataset and model files
         cur_dir = os.getcwd()
-        cur_dir = os.path.join(cur_dir, 'configs')
+        cur_dir = os.path.join(cur_dir, "configs")
         file_list.append(os.path.join(cur_dir, "overall.yaml"))
-        file_list.append(os.path.join(cur_dir, "datasets", "{}.yaml".format(config_dict['dataset'].lower())))
-        file_list.append(os.path.join(cur_dir, "models", "{}.yaml".format(config_dict['model'])))
+        file_list.append(
+            os.path.join(
+                cur_dir, "datasets", "{}.yaml".format(config_dict["dataset"].lower())
+            )
+        )
+        file_list.append(
+            os.path.join(cur_dir, "models", "{}.yaml".format(config_dict["model"]))
+        )
         if mg:
             file_list.append(os.path.join(cur_dir, "mg.yaml"))
 
         hyper_parameters = []
         for file in file_list:
             if os.path.isfile(file):
-                with open(file, 'r', encoding='utf-8') as f:
+                with open(file, "r", encoding="utf-8") as f:
                     fdata = yaml.load(f.read(), Loader=self._build_yaml_loader())
-                    if fdata.get('hyper_parameters'):
-                        hyper_parameters.extend(fdata['hyper_parameters'])
+                    if fdata.get("hyper_parameters"):
+                        hyper_parameters.extend(fdata["hyper_parameters"])
                     file_config_dict.update(fdata)
 
-        file_config_dict['hyper_parameters'] = hyper_parameters
+        file_config_dict["hyper_parameters"] = hyper_parameters
         return file_config_dict
 
     def _build_yaml_loader(self):
         loader = yaml.FullLoader
         loader.add_implicit_resolver(
-            u'tag:yaml.org,2002:float',
-            re.compile(u'''^(?:
+            "tag:yaml.org,2002:float",
+            re.compile(
+                """^(?:
              [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
             |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
             |\\.[0-9_]+(?:[eE][-+][0-9]+)?
             |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
             |[-+]?\\.(?:inf|Inf|INF)
-            |\\.(?:nan|NaN|NAN))$''', re.X),
-            list(u'-+0123456789.'))
+            |\\.(?:nan|NaN|NAN))$""",
+                re.X,
+            ),
+            list("-+0123456789."),
+        )
         return loader
 
     def _set_default_parameters(self):
-        smaller_metric = ['rmse', 'mae', 'logloss']
-        valid_metric = self.final_config_dict['valid_metric'].split('@')[0]
-        self.final_config_dict['valid_metric_bigger'] = False if valid_metric in smaller_metric else True
+        smaller_metric = ["rmse", "mae", "logloss"]
+        valid_metric = self.final_config_dict["valid_metric"].split("@")[0]
+        self.final_config_dict["valid_metric_bigger"] = (
+            False if valid_metric in smaller_metric else True
+        )
         # if seed not in hyper_parameters, then add
         # if "seed" not in self.final_config_dict['hyper_parameters']:
         #     self.final_config_dict['hyper_parameters'] += ['seed']
 
         # set the default paths
-        for key in self.final_config_dict['paths'].keys():
-            if key != 'save':
-                self.final_config_dict['paths'][key] = self.final_config_dict['paths'][key].format(
-                    self.final_config_dict['model'], self.final_config_dict['dataset'])
+        for key in self.final_config_dict["paths"].keys():
+            if key != "save":
+                self.final_config_dict["paths"][key] = self.final_config_dict["paths"][
+                    key
+                ].format(
+                    self.final_config_dict["model"], self.final_config_dict["dataset"]
+                )
             else:
-                self.final_config_dict['paths'][key] = self.final_config_dict['paths'][key].format(
-                    self.final_config_dict['model'], self.final_config_dict['dataset'],
-                    self.final_config_dict['type'])
+                self.final_config_dict["paths"][key] = self.final_config_dict["paths"][
+                    key
+                ].format(
+                    self.final_config_dict["model"],
+                    self.final_config_dict["dataset"],
+                    self.final_config_dict["type"],
+                )
 
-            if not os.path.exists(self.final_config_dict['paths'][key]):
-                os.makedirs(self.final_config_dict['paths'][key])
+            if not os.path.exists(self.final_config_dict["paths"][key]):
+                os.makedirs(self.final_config_dict["paths"][key])
 
         # set the default model_dir
-        self.final_config_dict['model_dir'] = os.path.join(self.final_config_dict['paths']['checkpoint'],
-                                                           '[{}.{}].pkl')
+        self.final_config_dict["model_dir"] = os.path.join(
+            self.final_config_dict["paths"]["checkpoint"], "[{}.{}].pkl"
+        )
 
         # set the default log_file_name
-        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')
-        self.final_config_dict['log_file_name'] = os.path.join(
-            self.final_config_dict['paths']['log'], "[{}]-[{}]-[{}.{}]-[{}].txt".format(
-                self.final_config_dict['model'], self.final_config_dict['dataset'],
-                self.final_config_dict['type'], self.final_config_dict['comment'], current_time
-            ))
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        self.final_config_dict["log_file_name"] = os.path.join(
+            self.final_config_dict["paths"]["log"],
+            "[{}]-[{}]-[{}.{}]-[{}].txt".format(
+                self.final_config_dict["model"],
+                self.final_config_dict["dataset"],
+                self.final_config_dict["type"],
+                self.final_config_dict["comment"],
+                current_time,
+            ),
+        )
 
         # set the result file name
-        self.final_config_dict['result_file_name'] = os.path.join(
-            self.final_config_dict['paths']['save'], "[{}]-[{}]-[{}.{}].csv".format(
-                self.final_config_dict['model'], self.final_config_dict['dataset'],
-                self.final_config_dict['type'], self.final_config_dict['comment']
-            ))
+        self.final_config_dict["result_file_name"] = os.path.join(
+            self.final_config_dict["paths"]["save"],
+            "[{}]-[{}]-[{}.{}].csv".format(
+                self.final_config_dict["model"],
+                self.final_config_dict["dataset"],
+                self.final_config_dict["type"],
+                self.final_config_dict["comment"],
+            ),
+        )
 
     def _init_device(self):
-        use_gpu = self.final_config_dict['use_gpu']
+        use_gpu = self.final_config_dict["use_gpu"]
         if use_gpu:
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.final_config_dict['gpu_id'])
-        self.final_config_dict['device'] = torch.device("cuda" if torch.cuda.is_available() and use_gpu else "cpu")
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.final_config_dict["gpu_id"])
+            if torch.cuda.is_available():
+                self.logger.info(f"使用GPU：{torch.cuda.get_device_name(0)}")
+            else:
+                self.logger.warning("已指定使用GPU，但CUDA不可用。将使用CPU替代。")
+
+        self.final_config_dict["device"] = torch.device(
+            "cuda" if torch.cuda.is_available() and use_gpu else "cpu"
+        )
+        self.logger.info(f"当前使用设备: {self.final_config_dict['device']}")
+
+        # 检查CUDA内存情况
+        self._check_cuda_memory()
+
+    def _check_cuda_memory(self):
+        if self.final_config_dict["device"].type == "cuda":
+            self.logger.info(
+                f"CUDA内存：已分配 {torch.cuda.memory_allocated()/1024**2:.2f}MB，"
+                f"缓存 {torch.cuda.memory_reserved()/1024**2:.2f}MB"
+            )
 
     def __setitem__(self, key, value):
         if not isinstance(key, str):
@@ -161,15 +212,34 @@ class Config(object):
         else:
             return None
 
+    def get(self, key, default=None):
+        """Get the value of a key from the config dict.
+
+        Args:
+            key (str): The key to get value for.
+            default: The default value to return if key is not found.
+
+        Returns:
+            The value associated with the key, or default if key is not found.
+        """
+        if not isinstance(key, str):
+            raise TypeError("key must be a str.")
+        return self.final_config_dict.get(key, default)
+
     def __contains__(self, key):
         if not isinstance(key, str):
             raise TypeError("index must be a str.")
         return key in self.final_config_dict
 
     def __str__(self):
-        args_info = '>>> [Config]: {'
-        args_info += ' '.join(["{}: {},".format(arg, value) for arg, value in self.final_config_dict.items()])
-        args_info += '}'
+        args_info = ">>> [Config]: {"
+        args_info += " ".join(
+            [
+                "{}: {},".format(arg, value)
+                for arg, value in self.final_config_dict.items()
+            ]
+        )
+        args_info += "}"
         return args_info
 
     def __repr__(self):

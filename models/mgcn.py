@@ -118,6 +118,8 @@ class MGCN(GeneralRecommender):
         def normalized_adj_single(adj):
             rowsum = np.array(adj.sum(1))
 
+            # 添加小的 epsilon 值来避免除零
+            rowsum = rowsum + 1e-7
             d_inv = np.power(rowsum, -0.5).flatten()
             d_inv[np.isinf(d_inv)] = 0.
             d_mat_inv = sp.diags(d_inv)

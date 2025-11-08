@@ -15,7 +15,13 @@ clip_grad_norm: 1.0
 
 use_neg_sampling: True
 
-hyper_parameters: []
+# hyper_parameters: []
 
-lr: 1e-1
-l2_reg: 1e-8
+# lr: 1e-2
+# l2_reg: 1e-4
+
+
+hyper_parameters: [ "lr", "l2_reg" ]
+
+lr: [ 1e-1,1e-2,1e-3,1e-4 ]
+l2_reg: [ 1e-4,1e-5,1e-6,1e-7,1e-8, 0 ]

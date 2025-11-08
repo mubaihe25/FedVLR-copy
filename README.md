@@ -1,22 +1,25 @@
-# FedMR
+# FedVLR
 
-> This project is the code and the supplementary of "**Personalized Item Embeddings in Federated Multimodal Recommendation**"
+[![Static Badge](https://img.shields.io/badge/AAAI-N/A-red?style=plastic&logo=iclr&labelColor=%2386C166&color=grey)](https://openreview.net/forum?id=BQByYBJ9Wl) | [![Static Badge](https://img.shields.io/badge/OpenReview-FedVLR-red?style=plastic&logo=OpenReivew&labelColor=%23FCFAF2&color=grey)](https://openreview.net/forum?id=BQByYBJ9Wl) | [![Static Badge](https://img.shields.io/badge/arxiv-2410.08478-red?style=plastic&logo=arxiv&logoColor=white&labelColor=%23C73E3A&color=grey)](https://arxiv.org/abs/2410.08478)
+
+> This project is the code of Our Paper "**Federated Vision-Language-Recommendation with Personalized Fusion**"
 
 ## Requirements
 
-1. The code is implemented with `Python ~= 3.9` and `torch~=2.4.0+cu118`;
+1. The code is implemented with `Python ~= 3.8` and `torch~=2.4.0+cu118`;
 2. Other requirements can be installed by `pip install -r requirements.txt`.
 
 ## Quick Start
 
-1. Put datasets into the path `./datasets/`;
+1. Put datasets into the path `[parent_folder]/datasets/`;
 
 2. For quick start, please run:
     ``````
-    python main.py --model MMFedAvg --dataset KU
+    python main.py --alias MMFedRAP --dataset movielens --data_file ml-100k.dat \
+        --lr 1e-3 --l2_reg 1e-5 --seed 0
     ``````
 
-3. if you want to use the notice function `mail_notice`, please set your own keys.
+3. All multimodal FedRecs start with 'MM'.
 
 ## Thanks
 
@@ -26,3 +29,4 @@ We sincerely appreciate their open-source contributions!
 ## Contact
 
 - This project is free for academic usage. You can run it at your own risk.
+- For any other purposes, please contact Mr. Zhiwei Li ([lizhw.cs@outlook.com](mailto:lizhw.cs@outlook.com))
