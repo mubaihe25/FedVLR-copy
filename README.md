@@ -4,6 +4,9 @@
 
 > This project is the code of Our Paper "**Federated Vision-Language-Recommendation with Personalized Fusion**"
 
+![Poster of FedVLR](./assets/poster.png)
+
+
 ## Requirements
 
 1. The code is implemented with `Python ~= 3.8` and `torch~=2.4.0+cu118`;
