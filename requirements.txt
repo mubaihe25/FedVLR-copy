@@ -9,7 +9,7 @@ scikit_learn
 scipy
 # torch_scatter
 # torch==2.4.0+cu118
-# torchvision==0.19.0+cu118
+# torchvision==0.19.0+cu130
 tqdm
 huggingface-hub
 open_clip_torch

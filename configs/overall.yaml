@@ -1,16 +1,16 @@
 ######################################################
 #                       Method                       #
 ######################################################
-model: "FedMAE"
-is_federated: False
+model: "MMFedRAP"
+is_federated: True
 
 
 ######################################################
 #                      Dataset                       #
 ######################################################
 data_path: "./datasets/"
-dataset: "movielens"
-data_file: "ml-100k.dat"
+dataset: "KU"
+data_file: "inter.csv"
 num_negative: 4
 split: "predefined" # "holdout", "leave_one_out", "predefined"
 holdout_rates: 0.1

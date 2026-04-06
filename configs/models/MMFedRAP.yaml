@@ -5,7 +5,7 @@ feat_embed_dim: 64
 is_federated: True
 is_multimodal_model: True
 
-learner: 'SGD'
+learner: 'adam'
 
 fusion_module: 'moe' # 'moe', 'sum', 'attention', 'mlp', 'gate'
 num_heads: 8 # number of heads in the attention module
@@ -22,10 +22,15 @@ beta: 1e-2
 # l2_reg: 1e-4
 
 # hyper_parameters: [ "alpha", "beta", "lr", "l2_reg" ]
-hyper_parameters: [ "lr", "l2_reg"]
+hyper_parameters: [ "lr", "l2_reg" ]
+
+# hyper_parameters: []
+
+#lr: 0.001
+#l2_reg: 1e-4
 
 # alpha: [ 1e-1,1e-2,1e-3,1e-4 ]
 # beta: [ 1e-1,1e-2,1e-3,1e-4 ]
 
-lr: [ 1e-1,1e-2,1e-3,1e-4 ]
-l2_reg: [ 1e-4,1e-5,1e-6,1e-7,1e-8, 0 ]
+lr: [ 0.01,0.005,0.001 ]
+l2_reg: [ 1e-4,1e-5 ]
