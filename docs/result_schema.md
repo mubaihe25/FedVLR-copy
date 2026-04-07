@@ -207,3 +207,24 @@
 同时建议在 `metadata.attack_summaries` 中记录整场实验的 probe summary，
 例如高风险客户端轮次数、累计高风险计数统计，以及 malicious target
 相关的观测轮次数与平均风险分数。
+
+## 当前已接入的第一个轻量主动攻击模块
+
+目前第一个真正会作用于 `participant_params` 的轻量主动攻击模块已接入：
+
+- `client_update_scale`
+- `clientupdatescaleattack`
+
+它只在聚合前对 `malicious_clients` 对应的上传更新做统一比例缩放。
+
+当前建议在 `round_metrics.extra.attack_metrics` 中记录：
+
+- `attacked_clients`
+- `attacked_client_count`
+- `attack_scale`
+- `touched_update_count`
+- `attacked_client_norms_before`
+- `attacked_client_norms_after`
+
+同时建议在 `metadata.attack_summaries` 中记录整场实验的缩放攻击摘要，
+例如攻击轮次数、累计命中客户端数量和前后范数统计。

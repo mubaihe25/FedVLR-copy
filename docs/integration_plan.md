@@ -270,3 +270,33 @@
 
 默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只做
 观察和记录，不会修改客户端训练、聚合输入、loss 或参数更新。
+
+## 第一个轻量主动攻击模块：ClientUpdateScaleAttack
+
+当前新增了第一个真正会作用于 `participant_params` 的轻量主动攻击模块：
+`ClientUpdateScaleAttack`。
+
+它的设计保持极简：
+
+- 只在联邦训练的聚合前阶段运行
+- 只对本轮 `malicious_clients` 对应的上传更新生效
+- 只做统一比例缩放：`scaled_update = attack_scale * original_update`
+
+当前支持的最小配置项：
+
+- `attack_scale`
+
+当前主要记录：
+
+- `attacked_clients`
+- `attacked_client_count`
+- `attack_scale`
+- `touched_update_count`
+- `attacked_client_norms_before`
+- `attacked_client_norms_after`
+
+该模块通过 `enabled_attacks` 配置启用，并依赖现有 `malicious_clients`
+目标链路选择作用对象。
+
+默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只改变
+目标客户端的上传更新，不修改客户端训练算法、loss、聚合算法或模型结构。
