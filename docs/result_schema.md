@@ -23,6 +23,15 @@
 | `final_eval` | `object` | 最终推荐性能与补充指标 |
 | `metadata` | `object` | 额外实验配置、说明信息、扩展字段 |
 
+当前 `metadata` 中建议同时记录：
+
+- `enabled_attacks`
+- `enabled_defenses`
+- `enabled_privacy_metrics`
+- `loaded_attacks`
+- `loaded_defenses`
+- `loaded_privacy_metrics`
+
 ## `round_metrics` 子结构建议
 
 每轮建议至少包含以下字段：
@@ -45,6 +54,12 @@
 | `privacy_risk_score` | `number \| null` | 本轮隐私风险 |
 | `robustness_score` | `number \| null` | 本轮鲁棒性分数 |
 | `extra` | `object` | 预留扩展字段 |
+
+当前 `round_metrics.extra` 可继续用于记录：
+
+- 本轮已加载的 attack / defense / privacy metric 名称
+- NoOp 模块返回的占位输出
+- 未来真实模块的 round-level 指标输出
 
 ## `final_eval` 子结构建议
 
@@ -89,8 +104,20 @@
 - `malicious_client_mode`
 - `malicious_client_ratio`
 - `malicious_client_ids`
+- `enabled_attacks`
+- `enabled_defenses`
+- `enabled_privacy_metrics`
 
 但这些配置当前只用于生成“记录层面的恶意客户端列表”，不会改变客户端训练、聚合或参数更新行为。后续真实 attack 接入时，可直接基于这些列表选择目标客户端。
+
+目前 attack / defense / privacy metric 也只支持 NoOp/占位模块：
+
+- `noop`
+- `noopattack`
+- `noopdefense`
+- `noopprivacymetric`
+
+它们当前通过注册表和 runtime 正常加载，但不会改变训练行为。未来真实模块可以沿用同一注册、加载和结果记录链路接入。
 
 ### 4. `round_metrics`
 

@@ -13,9 +13,12 @@ import math
 import random
 from typing import Any, Dict, List, Optional
 
+from attacks import get_attack, list_attacks
 from attacks.base_attack import BaseAttack
+from defenses import get_defense, list_defenses
 from defenses.base_defense import BaseDefense
 from privacy_eval.base_metric import BasePrivacyMetric
+from privacy_eval import get_privacy_metric, list_privacy_metrics
 from privacy_eval.result_schema import ExperimentResult, RoundMetric, build_empty_result
 
 
@@ -42,6 +45,15 @@ class ExperimentHookManager:
             str(client_id) for client_id in configured_malicious_ids
         ]
         self.base_seed = int(config.get("seed", 0) or 0)
+        self.enabled_attacks = self._normalize_module_names(
+            config.get("enabled_attacks", [])
+        )
+        self.enabled_defenses = self._normalize_module_names(
+            config.get("enabled_defenses", [])
+        )
+        self.enabled_privacy_metrics = self._normalize_module_names(
+            config.get("enabled_privacy_metrics", [])
+        )
 
         self.attacks: List[BaseAttack] = []
         self.defenses: List[BaseDefense] = []
@@ -66,12 +78,98 @@ class ExperimentHookManager:
                 "configured_malicious_client_ids": list(
                     self.configured_malicious_client_ids
                 ),
+                "enabled_attacks": list(self.enabled_attacks),
+                "enabled_defenses": list(self.enabled_defenses),
+                "enabled_privacy_metrics": list(self.enabled_privacy_metrics),
                 "type": config.get("type"),
                 "comment": config.get("comment"),
             }
         )
 
+        self.attacks, unknown_attacks = self._load_attack_instances(self.enabled_attacks)
+        self.defenses, unknown_defenses = self._load_defense_instances(
+            self.enabled_defenses
+        )
+        self.privacy_metrics, unknown_privacy_metrics = self._load_privacy_metric_instances(
+            self.enabled_privacy_metrics
+        )
+
+        self.result.metadata.update(
+            {
+                "loaded_attacks": [attack.name for attack in self.attacks],
+                "loaded_defenses": [defense.name for defense in self.defenses],
+                "loaded_privacy_metrics": [metric.name for metric in self.privacy_metrics],
+                "unknown_attacks": unknown_attacks,
+                "unknown_defenses": unknown_defenses,
+                "unknown_privacy_metrics": unknown_privacy_metrics,
+                "available_attacks": list_attacks(),
+                "available_defenses": list_defenses(),
+                "available_privacy_metrics": list_privacy_metrics(),
+            }
+        )
+
         self.result.malicious_clients = []
+
+    def _normalize_module_names(self, names: Any) -> List[str]:
+        if names is None:
+            return []
+        if isinstance(names, str):
+            return [names.strip()] if names.strip() else []
+        normalized = []
+        for name in names:
+            if name is None:
+                continue
+            name_str = str(name).strip()
+            if name_str:
+                normalized.append(name_str)
+        return normalized
+
+    def _load_attack_instances(self, names: List[str]) -> tuple[List[BaseAttack], List[str]]:
+        attacks: List[BaseAttack] = []
+        unknown_names: List[str] = []
+        for name in names:
+            try:
+                attack_cls = get_attack(name)
+                attacks.append(attack_cls(name=name, config=self.config))
+            except KeyError:
+                unknown_names.append(name)
+        return attacks, unknown_names
+
+    def _load_defense_instances(self, names: List[str]) -> tuple[List[BaseDefense], List[str]]:
+        defenses: List[BaseDefense] = []
+        unknown_names: List[str] = []
+        for name in names:
+            try:
+                defense_cls = get_defense(name)
+                defenses.append(defense_cls(name=name, config=self.config))
+            except KeyError:
+                unknown_names.append(name)
+        return defenses, unknown_names
+
+    def _load_privacy_metric_instances(
+        self, names: List[str]
+    ) -> tuple[List[BasePrivacyMetric], List[str]]:
+        metrics: List[BasePrivacyMetric] = []
+        unknown_names: List[str] = []
+        for name in names:
+            try:
+                metric_cls = get_privacy_metric(name)
+                metrics.append(metric_cls(name=name, config=self.config))
+            except KeyError:
+                unknown_names.append(name)
+        return metrics, unknown_names
+
+    def _collect_attack_metrics(self) -> Dict[str, Any]:
+        return {attack.name: attack.collect_metrics() for attack in self.attacks}
+
+    def _collect_defense_metrics(self) -> Dict[str, Any]:
+        return {defense.name: defense.collect_metrics() for defense in self.defenses}
+
+    def _collect_privacy_metrics(self, round_state: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            metric.name: metric.evaluate_round(round_state, {}, {})
+            for metric in self.privacy_metrics
+        }
 
     def _build_experiment_id(self) -> str:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -163,6 +261,15 @@ class ExperimentHookManager:
             metric.hooks_enabled = self.enabled
             metric.malicious_clients = list(round_malicious_clients)
             metric.malicious_client_count = len(round_malicious_clients)
+            metric.extra.update(
+                {
+                    "loaded_attacks": [attack.name for attack in self.attacks],
+                    "loaded_defenses": [defense.name for defense in self.defenses],
+                    "loaded_privacy_metrics": [
+                        metric_obj.name for metric_obj in self.privacy_metrics
+                    ],
+                }
+            )
 
         if self.enabled:
             for attack in self.attacks:
@@ -231,6 +338,9 @@ class ExperimentHookManager:
                 "sampled_clients": round_state.get("sampled_clients", []),
                 "malicious_clients": round_malicious_clients,
                 "client_losses": round_state.get("client_losses", {}),
+                "attack_metrics": self._collect_attack_metrics(),
+                "defense_metrics": self._collect_defense_metrics(),
+                "privacy_metric_outputs": self._collect_privacy_metrics(round_state),
             }
         )
 
@@ -267,6 +377,11 @@ class ExperimentHookManager:
                 "valid_result": valid_result or {},
                 "test_result": test_result or {},
                 "malicious_clients": round_malicious_clients,
+                "loaded_attacks": [attack.name for attack in self.attacks],
+                "loaded_defenses": [defense.name for defense in self.defenses],
+                "loaded_privacy_metrics": [
+                    metric_obj.name for metric_obj in self.privacy_metrics
+                ],
             }
         )
 

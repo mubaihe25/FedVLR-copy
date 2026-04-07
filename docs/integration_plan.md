@@ -100,6 +100,9 @@
 - `malicious_client_mode`：默认 `none`
 - `malicious_client_ratio`：默认 `0.0`
 - `malicious_client_ids`：默认空列表
+- `enabled_attacks`：默认空列表
+- `enabled_defenses`：默认空列表
+- `enabled_privacy_metrics`：默认空列表
 
 默认情况下：
 
@@ -112,6 +115,7 @@
 
 当前只会在内存中记录最基础的 round 信息，供未来 API / 前端接入时复用。
 当前的 `malicious_clients` 也只是占位配置与占位记录，不会改变任何客户端的训练行为。
+当前 attack / defense / privacy metric 也只支持 NoOp/占位模块，通过注册表和 runtime 加载链路接通，但不会改变训练行为。
 
 ### 本轮已预留的调用点
 
@@ -150,3 +154,21 @@
   在 round 结束和 `fit` 末尾汇总输出隐私风险评分、隐私预算和 round-level 指标。
 
 也就是说，本轮不是在训练链路里硬编码安全逻辑，而是先把“可插入的位置”和“可输出的结构”准备好，并确保默认情况下训练行为不变。
+
+## 本轮新增的最小注册与加载链路
+
+当前新增了三类配置项：
+
+- `enabled_attacks`
+- `enabled_defenses`
+- `enabled_privacy_metrics`
+
+它们都支持以名称列表的方式写入 `config_dict / Config`。如果为空，则默认不启用任何模块。
+
+当前三类模块都支持极简 NoOp 示例：
+
+- `NoOpAttack`
+- `NoOpDefense`
+- `NoOpPrivacyMetric`
+
+这些模块通过各自的注册表注册，并在 `ExperimentHookManager` 初始化时按名称实例化。即使显式加载了 NoOp 模块，也只会做占位记录，不会改动训练、loss、聚合或参数更新。
