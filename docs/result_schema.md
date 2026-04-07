@@ -228,3 +228,23 @@
 
 同时建议在 `metadata.attack_summaries` 中记录整场实验的缩放攻击摘要，
 例如攻击轮次数、累计命中客户端数量和前后范数统计。
+
+## 当前已接入的第一个轻量主动防御模块
+
+目前第一个真正会作用于 `participant_params` 的轻量主动防御模块已接入：
+
+- `norm_clip`
+- `normclipdefense`
+
+它只在聚合前对客户端上传更新做统一的全局范数裁剪，不替换聚合算法。
+
+当前建议在 `round_metrics.extra.defense_metrics` 中记录：
+
+- `clipped_clients`
+- `clipped_client_count`
+- `defense_clip_norm`
+- `norms_before`
+- `norms_after`
+
+同时建议在 `metadata.defense_summaries` 中记录整场实验的裁剪防御摘要，
+例如发生裁剪的轮次数、累计被裁剪客户端数和裁剪前后平均范数。

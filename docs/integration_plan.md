@@ -300,3 +300,32 @@
 
 默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只改变
 目标客户端的上传更新，不修改客户端训练算法、loss、聚合算法或模型结构。
+
+## 第一个轻量主动防御模块：NormClipDefense
+
+当前新增了第一个真正会作用于 `participant_params` 的轻量主动防御模块：
+`NormClipDefense`。
+
+它的设计同样保持极简：
+
+- 只在联邦训练的聚合前阶段运行
+- 对所有参与客户端上传更新执行统一的全局范数裁剪
+- 如果某个客户端更新范数超过阈值，则整体缩放到阈值范围内
+
+当前支持的最小配置项：
+
+- `defense_clip_norm`
+
+当前主要记录：
+
+- `clipped_clients`
+- `clipped_client_count`
+- `defense_clip_norm`
+- `norms_before`
+- `norms_after`
+
+该模块通过 `enabled_defenses` 配置启用，并沿用现有
+`registry -> ExperimentHookManager -> round_metrics.extra` 链路接入。
+
+默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只是做
+聚合前预处理，不替换聚合算法，不修改客户端训练、loss 或模型结构。
