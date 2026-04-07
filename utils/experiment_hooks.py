@@ -108,7 +108,31 @@ class ExperimentHookManager:
             }
         )
 
+        self.result.active_attacks = [attack.name for attack in self.attacks]
+        self.result.active_defenses = [defense.name for defense in self.defenses]
+        self.result.active_privacy_metrics = [
+            metric.name for metric in self.privacy_metrics
+        ]
+        self.result.experiment_mode = self._infer_experiment_mode(
+            self.result.active_attacks,
+            self.result.active_defenses,
+            self.result.active_privacy_metrics,
+        )
+        self.result.scenario_tags = self._build_scenario_tags(
+            self.result.experiment_mode,
+            self.result.active_privacy_metrics,
+        )
         self.result.malicious_clients = []
+        self.result.metadata.update(
+            {
+                "active_attacks": list(self.result.active_attacks),
+                "active_defenses": list(self.result.active_defenses),
+                "active_privacy_metrics": list(self.result.active_privacy_metrics),
+                "experiment_mode": self.result.experiment_mode,
+                "scenario_tags": list(self.result.scenario_tags),
+                "malicious_client_summary": self._build_malicious_client_summary(),
+            }
+        )
 
     def _normalize_module_names(self, names: Any) -> List[str]:
         if names is None:
@@ -186,6 +210,66 @@ class ExperimentHookManager:
             self.config["dataset"],
             timestamp,
         )
+
+    def _infer_experiment_mode(
+        self,
+        active_attacks: List[str],
+        active_defenses: List[str],
+        active_privacy_metrics: List[str],
+    ) -> str:
+        if active_attacks and active_defenses:
+            return "attack_and_defense"
+        if active_attacks:
+            return "attack_only"
+        if active_defenses:
+            return "defense_only"
+        if active_privacy_metrics:
+            return "privacy_observation"
+        return "baseline"
+
+    def _build_scenario_tags(
+        self,
+        experiment_mode: str,
+        active_privacy_metrics: List[str],
+    ) -> List[str]:
+        scenario_tags = [experiment_mode]
+        if active_privacy_metrics and "privacy_observation" not in scenario_tags:
+            scenario_tags.append("privacy_observation")
+        if self.enable_malicious_clients:
+            scenario_tags.append("malicious_clients_configured")
+        return scenario_tags
+
+    def _build_round_pipeline_info(
+        self, round_malicious_clients: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        round_malicious_clients = list(round_malicious_clients or [])
+        return {
+            "active_attacks": list(self.result.active_attacks),
+            "active_defenses": list(self.result.active_defenses),
+            "active_privacy_metrics": list(self.result.active_privacy_metrics),
+            "experiment_mode": self.result.experiment_mode,
+            "scenario_tags": list(self.result.scenario_tags),
+            "malicious_clients": round_malicious_clients,
+            "malicious_client_count": len(round_malicious_clients),
+        }
+
+    def _build_malicious_client_summary(self) -> Dict[str, Any]:
+        round_counts = [
+            len(list(round_state.get("malicious_clients", [])))
+            for round_state in self.round_states.values()
+        ]
+        return {
+            "enabled": self.enable_malicious_clients,
+            "mode": self.malicious_client_mode,
+            "ratio": self.malicious_client_ratio,
+            "configured_client_ids": list(self.configured_malicious_client_ids),
+            "unique_malicious_clients": list(self.result.malicious_clients),
+            "unique_malicious_client_count": len(self.result.malicious_clients),
+            "rounds_with_malicious_clients": sum(
+                1 for count in round_counts if count > 0
+            ),
+            "max_round_malicious_client_count": max(round_counts) if round_counts else 0,
+        }
 
     def _get_round_state(self, round_index: int) -> Dict[str, Any]:
         return self.round_states.setdefault(
@@ -276,6 +360,14 @@ class ExperimentHookManager:
                     "loaded_privacy_metrics": [
                         metric_obj.name for metric_obj in self.privacy_metrics
                     ],
+                    "active_attacks": list(self.result.active_attacks),
+                    "active_defenses": list(self.result.active_defenses),
+                    "active_privacy_metrics": list(self.result.active_privacy_metrics),
+                    "experiment_mode": self.result.experiment_mode,
+                    "scenario_tags": list(self.result.scenario_tags),
+                    "pipeline_info": self._build_round_pipeline_info(
+                        round_malicious_clients
+                    ),
                 }
             )
 
@@ -355,6 +447,14 @@ class ExperimentHookManager:
                 "attack_metrics": self._collect_attack_metrics(),
                 "defense_metrics": self._collect_defense_metrics(),
                 "privacy_metric_outputs": round_state.get("privacy_metric_outputs", {}),
+                "active_attacks": list(self.result.active_attacks),
+                "active_defenses": list(self.result.active_defenses),
+                "active_privacy_metrics": list(self.result.active_privacy_metrics),
+                "experiment_mode": self.result.experiment_mode,
+                "scenario_tags": list(self.result.scenario_tags),
+                "pipeline_info": self._build_round_pipeline_info(
+                    round_malicious_clients
+                ),
             }
         )
 
@@ -397,6 +497,14 @@ class ExperimentHookManager:
                     metric_obj.name for metric_obj in self.privacy_metrics
                 ],
                 "privacy_metric_outputs": round_state.get("privacy_metric_outputs", {}),
+                "active_attacks": list(self.result.active_attacks),
+                "active_defenses": list(self.result.active_defenses),
+                "active_privacy_metrics": list(self.result.active_privacy_metrics),
+                "experiment_mode": self.result.experiment_mode,
+                "scenario_tags": list(self.result.scenario_tags),
+                "pipeline_info": self._build_round_pipeline_info(
+                    round_malicious_clients
+                ),
             }
         )
 
@@ -413,6 +521,16 @@ class ExperimentHookManager:
 
         self.result.metadata["best_valid_result"] = best_valid_result or {}
         self.result.metadata["best_test_result"] = best_test_result or {}
+        self.result.metadata["active_attacks"] = list(self.result.active_attacks)
+        self.result.metadata["active_defenses"] = list(self.result.active_defenses)
+        self.result.metadata["active_privacy_metrics"] = list(
+            self.result.active_privacy_metrics
+        )
+        self.result.metadata["experiment_mode"] = self.result.experiment_mode
+        self.result.metadata["scenario_tags"] = list(self.result.scenario_tags)
+        self.result.metadata["malicious_client_summary"] = (
+            self._build_malicious_client_summary()
+        )
         self.result.metadata["attack_summaries"] = {
             attack.name: attack.summarize(self.result.metadata)
             for attack in self.attacks

@@ -248,3 +248,41 @@
 
 同时建议在 `metadata.defense_summaries` 中记录整场实验的裁剪防御摘要，
 例如发生裁剪的轮次数、累计被裁剪客户端数和裁剪前后平均范数。
+
+## 当前已增强的实验场景表达字段
+
+目前 `ExperimentResult` 顶层建议稳定包含：
+
+- `active_attacks`
+- `active_defenses`
+- `active_privacy_metrics`
+- `experiment_mode`
+- `scenario_tags`
+
+其中：
+
+- `active_attacks` 表示当前实验实际启用并成功加载的攻击模块名列表
+- `active_defenses` 表示当前实验实际启用并成功加载的防御模块名列表
+- `active_privacy_metrics` 表示当前实验实际启用并成功加载的隐私观测模块名列表
+- `experiment_mode` 表示实验主场景，例如 `baseline / attack_only / defense_only / attack_and_defense / privacy_observation`
+- `scenario_tags` 表示补充性的场景标签列表，适合前端直接渲染胶囊标签
+
+当前建议在 `metadata` 中进一步记录：
+
+- `active_attacks`
+- `active_defenses`
+- `active_privacy_metrics`
+- `experiment_mode`
+- `scenario_tags`
+- `malicious_client_summary`
+
+当前建议在 `round_metrics[*].extra` 中进一步记录：
+
+- `active_attacks`
+- `active_defenses`
+- `active_privacy_metrics`
+- `experiment_mode`
+- `scenario_tags`
+- `pipeline_info`
+
+这些字段只增强实验结果表达能力，不改变现有训练逻辑。

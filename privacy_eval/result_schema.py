@@ -45,6 +45,11 @@ class ExperimentResult:
     experiment_id: str
     model: str
     dataset: str
+    active_attacks: List[str] = field(default_factory=list)
+    active_defenses: List[str] = field(default_factory=list)
+    active_privacy_metrics: List[str] = field(default_factory=list)
+    experiment_mode: Optional[str] = None
+    scenario_tags: List[str] = field(default_factory=list)
     attack_type: Optional[str] = None
     defense_type: Optional[str] = None
     malicious_clients: List[str] = field(default_factory=list)

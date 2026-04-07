@@ -329,3 +329,38 @@
 
 默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只是做
 聚合前预处理，不替换聚合算法，不修改客户端训练、loss 或模型结构。
+
+## 最小攻防实验编排与场景表达
+
+当前系统已经支持把已启用的 attack / defense / privacy metric 组织成更清晰
+的实验方案表达，用于后续 API、前端和比赛展示。
+
+当前新增的实验级字段包括：
+
+- `active_attacks`
+- `active_defenses`
+- `active_privacy_metrics`
+- `experiment_mode`
+- `scenario_tags`
+- `malicious_client_summary`
+
+其中 `experiment_mode` 用于给出当前实验的主场景标签，例如：
+
+- `baseline`
+- `attack_only`
+- `defense_only`
+- `attack_and_defense`
+- `privacy_observation`
+
+`scenario_tags` 则用于补充场景说明，例如在开启 privacy metric 时追加
+`privacy_observation`，在开启 malicious client 机制时追加
+`malicious_clients_configured`。
+
+在 round 级结果中，当前也会通过 `round_metrics[*].extra` 稳定记录：
+
+- 本轮启用的 attack / defense / privacy metric 名称
+- 本轮 `experiment_mode`
+- 本轮 `scenario_tags`
+- 本轮 `malicious_clients`
+
+这些增强只作用于结果表达层，不改变训练算法、loss、聚合或模型结构。
