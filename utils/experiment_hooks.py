@@ -73,7 +73,7 @@ class ExperimentHookManager:
         for metric in self.result.round_metrics:
             if metric.round_index == round_index:
                 return metric
-        metric = RoundMetric(round_index=round_index)
+        metric = RoundMetric(round_index=round_index, round_id=round_index)
         self.result.round_metrics.append(metric)
         return metric
 
@@ -91,8 +91,19 @@ class ExperimentHookManager:
 
     def start_round(self, round_index: int, sampled_clients: List[Any]) -> Dict[str, Any]:
         round_state = self._get_round_state(round_index)
-        round_state["sampled_clients"] = [str(client_id) for client_id in sampled_clients]
+        participant_clients = [str(client_id) for client_id in sampled_clients]
+        round_state["sampled_clients"] = participant_clients
         round_state["participant_count"] = len(sampled_clients)
+
+        if self.collect_round_metrics:
+            metric = self._upsert_round_metric(round_index)
+            metric.round_id = round_index
+            metric.participant_clients = participant_clients
+            metric.num_participants = len(sampled_clients)
+            metric.participant_count = len(sampled_clients)
+            metric.hooks_enabled = self.enabled
+            metric.malicious_clients = list(self.result.malicious_clients)
+            metric.malicious_client_count = len(self.result.malicious_clients)
 
         if self.enabled:
             for attack in self.attacks:
@@ -146,8 +157,14 @@ class ExperimentHookManager:
         metric = self._upsert_round_metric(round_index)
         round_state = self._get_round_state(round_index)
 
+        metric.round_id = round_index
+        metric.participant_clients = list(round_state.get("sampled_clients", []))
+        metric.num_participants = participant_count
         metric.participant_count = participant_count
+        metric.avg_train_loss = None if train_loss is None else float(train_loss)
         metric.malicious_client_count = len(self.result.malicious_clients)
+        metric.malicious_clients = list(self.result.malicious_clients)
+        metric.hooks_enabled = self.enabled
         metric.train_loss = None if train_loss is None else float(train_loss)
         metric.extra.update(
             {
@@ -160,6 +177,8 @@ class ExperimentHookManager:
         self,
         round_index: int,
         train_loss: Optional[float],
+        valid_score: Optional[float] = None,
+        test_score: Optional[float] = None,
         valid_result: Optional[Dict[str, Any]] = None,
         test_result: Optional[Dict[str, Any]] = None,
         stop_flag: bool = False,
@@ -168,8 +187,16 @@ class ExperimentHookManager:
             return
 
         metric = self._upsert_round_metric(round_index)
+        metric.round_id = round_index
+        metric.hooks_enabled = self.enabled
+        metric.malicious_clients = list(self.result.malicious_clients)
+        metric.malicious_client_count = len(self.result.malicious_clients)
         if train_loss is not None and metric.train_loss is None:
             metric.train_loss = float(train_loss)
+        if train_loss is not None and metric.avg_train_loss is None:
+            metric.avg_train_loss = float(train_loss)
+        metric.valid_score = None if valid_score is None else float(valid_score)
+        metric.test_score = None if test_score is None else float(test_score)
 
         metric.extra.update(
             {

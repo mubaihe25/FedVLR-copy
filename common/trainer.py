@@ -296,7 +296,9 @@ class Trainer(AbstractTrainer):
                     self.logger.info(post_info)
 
             stop_flag = False
+            valid_score = None
             valid_result = None
+            test_score = None
             test_result = None
             # eval: To ensure the test result is the best model under validation data, set self.eval_step == 1
             if (epoch_idx + 1) % self.eval_step == 0:
@@ -324,6 +326,8 @@ class Trainer(AbstractTrainer):
                 valid_result_output = "[Valid] " + dict2str(valid_result)
                 # test
                 _, test_result = self._valid_epoch(test_data)
+                if test_result is not None:
+                    test_score = test_result.get(self.valid_metric)
                 if verbose:
                     self.logger.info(valid_score_output)
                     self.logger.info(valid_result_output)
@@ -356,6 +360,8 @@ class Trainer(AbstractTrainer):
                 self.experiment_hooks.record_epoch_exit(
                     round_index=epoch_idx + 1,
                     train_loss=self.train_loss_dict.get(epoch_idx),
+                    valid_score=valid_score,
+                    test_score=test_score,
                     valid_result=valid_result,
                     test_result=test_result,
                     stop_flag=stop_flag,
@@ -368,6 +374,8 @@ class Trainer(AbstractTrainer):
                 self.experiment_hooks.record_epoch_exit(
                     round_index=epoch_idx + 1,
                     train_loss=self.train_loss_dict.get(epoch_idx),
+                    valid_score=valid_score,
+                    test_score=test_score,
                     valid_result=valid_result,
                     test_result=test_result,
                     stop_flag=stop_flag,

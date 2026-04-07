@@ -29,10 +29,18 @@
 
 | 字段名 | 类型 | 说明 |
 | --- | --- | --- |
-| `round_index` | `number` | 当前轮次 |
-| `participant_count` | `number` | 本轮参与客户端数 |
+| `round_index` | `number` | 当前轮次，兼容旧字段 |
+| `round_id` | `number` | 当前轮次的稳定标识，建议前后端优先使用 |
+| `participant_clients` | `string[]` | 本轮实际参与的客户端列表 |
+| `num_participants` | `number` | 本轮参与客户端数，适合直接用于接口和前端 |
+| `avg_train_loss` | `number \| null` | 本轮平均训练损失 |
+| `valid_score` | `number \| null` | 本轮验证分数，通常对应当前 `valid_metric` |
+| `test_score` | `number \| null` | 本轮测试分数，建议与 `valid_score` 使用同一指标口径 |
+| `hooks_enabled` | `boolean` | 本轮是否启用了实验 hooks |
+| `malicious_clients` | `string[]` | 本轮恶意客户端列表，当前默认可为空 |
+| `participant_count` | `number` | 兼容旧字段，含义与 `num_participants` 一致 |
 | `malicious_client_count` | `number` | 本轮恶意客户端数 |
-| `train_loss` | `number \| null` | 本轮训练损失 |
+| `train_loss` | `number \| null` | 兼容旧字段，含义与 `avg_train_loss` 一致 |
 | `attack_success_rate` | `number \| null` | 本轮攻击效果 |
 | `privacy_risk_score` | `number \| null` | 本轮隐私风险 |
 | `robustness_score` | `number \| null` | 本轮鲁棒性分数 |

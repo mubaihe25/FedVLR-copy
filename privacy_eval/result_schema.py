@@ -11,6 +11,14 @@ class RoundMetric:
     """Round-level metrics emitted by future training, attack, and defense code."""
 
     round_index: int
+    round_id: int = 0
+    participant_clients: List[str] = field(default_factory=list)
+    num_participants: int = 0
+    avg_train_loss: Optional[float] = None
+    valid_score: Optional[float] = None
+    test_score: Optional[float] = None
+    hooks_enabled: bool = False
+    malicious_clients: List[str] = field(default_factory=list)
     participant_count: int = 0
     malicious_client_count: int = 0
     train_loss: Optional[float] = None
