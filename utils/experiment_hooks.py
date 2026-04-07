@@ -140,6 +140,9 @@ class ExperimentHookManager:
     def finish_train_round(
         self, round_index: int, train_loss: Optional[float], participant_count: int
     ) -> None:
+        if not self.collect_round_metrics:
+            return
+
         metric = self._upsert_round_metric(round_index)
         round_state = self._get_round_state(round_index)
 
@@ -161,6 +164,9 @@ class ExperimentHookManager:
         test_result: Optional[Dict[str, Any]] = None,
         stop_flag: bool = False,
     ) -> None:
+        if not self.collect_round_metrics:
+            return
+
         metric = self._upsert_round_metric(round_index)
         if train_loss is not None and metric.train_loss is None:
             metric.train_loss = float(train_loss)

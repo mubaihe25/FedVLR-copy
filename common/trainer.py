@@ -344,6 +344,7 @@ class Trainer(AbstractTrainer):
                 if (abs(cur_loss - last_loss) / abs(cur_loss + 1e-6)< self.config["tol"]):
                     stop_flag = True
 
+            epoch_exit_recorded = False
             if stop_flag:
                 stop_output = (
                     "████ Finished training, Best valid results are in Epoch %d ████"
@@ -359,10 +360,11 @@ class Trainer(AbstractTrainer):
                     test_result=test_result,
                     stop_flag=stop_flag,
                 )
+                epoch_exit_recorded = True
                 if self.config["early_stop"]:
                     break
 
-            if not stop_flag or not self.config["early_stop"]:
+            if not epoch_exit_recorded:
                 self.experiment_hooks.record_epoch_exit(
                     round_index=epoch_idx + 1,
                     train_loss=self.train_loss_dict.get(epoch_idx),
