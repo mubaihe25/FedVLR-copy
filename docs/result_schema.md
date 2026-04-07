@@ -159,3 +159,23 @@
 
 同时建议在 `metadata.privacy_metric_summaries` 中记录整场实验的 summary，
 例如跨轮平均值和全局最大/最小更新范数。
+
+## 当前已接入的第一个真实 defense 检测模块
+
+目前第一个真实但只读的 defense 模块已接入：
+
+- `client_update_anomaly`
+- `clientupdateanomalydetector`
+
+它只在聚合前观察客户端更新，不参与客户端过滤，也不替换聚合算法。
+
+当前建议在 `round_metrics.extra.defense_metrics` 中记录：
+
+- `suspicious_clients`
+- `suspicious_client_count`
+- `anomaly_threshold`
+- `detection_rule`
+- `client_scores`
+
+同时建议在 `metadata.defense_summaries` 中记录整场实验的 detector summary，
+例如检测轮次数和可疑客户端计数统计。

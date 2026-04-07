@@ -195,3 +195,31 @@
 
 默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只是做
 观察与统计，不会修改 loss、聚合算法或参数更新。
+
+## 第一个真实但只读的 defense 模块：ClientUpdateAnomalyDetector
+
+当前新增了第一个可运行的 defense 检测模块：`ClientUpdateAnomalyDetector`。
+
+它的职责同样保持克制：
+
+- 只在联邦训练的聚合前阶段观察 `participant_params`
+- 只基于客户端更新范数做简单异常检测
+- 只记录 `suspicious_clients` 等结构化结果，不执行拦截或过滤
+
+当前采用的检测规则是一个可解释的占位规则：
+
+- `update_norm > mean + std_factor * std`
+
+当前主要输出：
+
+- `suspicious_clients`
+- `suspicious_client_count`
+- `anomaly_threshold`
+- `detection_rule`
+- `client_scores`
+
+该 detector 通过 `enabled_defenses` 配置启用，并沿用统一的
+`registry -> ExperimentHookManager -> round_metrics.extra` 链路接入。
+
+默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只做
+检测和记录，不会修改聚合输入、loss 或参数更新。

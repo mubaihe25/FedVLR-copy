@@ -315,6 +315,7 @@ class ExperimentHookManager:
         if self.enabled:
             for attack in self.attacks:
                 participant_params = attack.before_aggregation(participant_params, round_state)
+        if self.enabled or self.defenses:
             for defense in self.defenses:
                 participant_params = defense.before_aggregation(
                     participant_params, round_state
@@ -412,6 +413,10 @@ class ExperimentHookManager:
 
         self.result.metadata["best_valid_result"] = best_valid_result or {}
         self.result.metadata["best_test_result"] = best_test_result or {}
+        self.result.metadata["defense_summaries"] = {
+            defense.name: defense.summarize(self.result.metadata)
+            for defense in self.defenses
+        }
         self.result.metadata["privacy_metric_summaries"] = {
             metric.name: metric.summarize(self.result.metadata)
             for metric in self.privacy_metrics

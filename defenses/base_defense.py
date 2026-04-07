@@ -67,3 +67,9 @@ class BaseDefense:
     def collect_metrics(self) -> Dict[str, Any]:
         """Return serializable defense-side metrics."""
         return {}
+
+    def summarize(
+        self, experiment_metadata: Optional[MutableMapping[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Return serializable experiment-level defense summaries."""
+        return {}
