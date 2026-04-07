@@ -14,6 +14,7 @@ import torch
 import torch.optim as optim
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
+from utils.experiment_hooks import ExperimentHookManager
 from utils.topk_evaluator import TopKEvaluator
 from utils.utils import early_stopping, dict2str, get_resource_usage_gb
 
@@ -102,6 +103,9 @@ class Trainer(AbstractTrainer):
         self.alpha1 = config["alpha1"]
         self.alpha2 = config["alpha2"]
         self.beta = config["beta"]
+        self.experiment_hooks = ExperimentHookManager(config)
+        self.experiment_result = self.experiment_hooks.result
+        self.experiment_result_dict = self.experiment_result.to_dict()
 
     def _build_optimizer(self):
         """初始化优化器"""
@@ -292,6 +296,8 @@ class Trainer(AbstractTrainer):
                     self.logger.info(post_info)
 
             stop_flag = False
+            valid_result = None
+            test_result = None
             # eval: To ensure the test result is the best model under validation data, set self.eval_step == 1
             if (epoch_idx + 1) % self.eval_step == 0:
                 valid_start_time = time()
@@ -346,9 +352,29 @@ class Trainer(AbstractTrainer):
                 if verbose:
                     self.logger.info(stop_output)
 
+                self.experiment_hooks.record_epoch_exit(
+                    round_index=epoch_idx + 1,
+                    train_loss=self.train_loss_dict.get(epoch_idx),
+                    valid_result=valid_result,
+                    test_result=test_result,
+                    stop_flag=stop_flag,
+                )
                 if self.config["early_stop"]:
                     break
 
+            if not stop_flag or not self.config["early_stop"]:
+                self.experiment_hooks.record_epoch_exit(
+                    round_index=epoch_idx + 1,
+                    train_loss=self.train_loss_dict.get(epoch_idx),
+                    valid_result=valid_result,
+                    test_result=test_result,
+                    stop_flag=stop_flag,
+                )
+
+        self.experiment_result = self.experiment_hooks.finalize_experiment(
+            self.best_valid_result, self.best_test_upon_valid
+        )
+        self.experiment_result_dict = self.experiment_hooks.to_dict()
         return self.best_valid_score, self.best_valid_result, self.best_test_upon_valid
 
     @torch.no_grad()

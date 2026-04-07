@@ -1,0 +1,98 @@
+# FedVLR 结果结构建议（面向后续 API / 前端）
+
+当前建议把实验结果组织为一个稳定、可序列化的结构，便于：
+
+- 训练完成后统一落盘
+- 后续由 API 返回给前端
+- 前端展示单次实验结果、对比结果和历史实验
+
+## 顶层字段建议
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `experiment_id` | `string` | 实验唯一标识，建议可直接用于前端和 API 查询 |
+| `model` | `string` | 当前模型名，例如 `MMFedRAP`、`FedRAP` |
+| `dataset` | `string` | 当前数据集 |
+| `attack_type` | `string \| null` | 当前攻击类型，未启用时可为空 |
+| `defense_type` | `string \| null` | 当前防御类型，未启用时可为空 |
+| `malicious_clients` | `string[]` | 被标记为恶意的客户端列表 |
+| `round_metrics` | `list` | 每轮训练的结构化指标 |
+| `attack_success_rate` | `number \| null` | 攻击成功率或攻击效果指标 |
+| `privacy_risk_score` | `number \| null` | 隐私风险评分 |
+| `robustness_score` | `number \| null` | 鲁棒性评分 |
+| `final_eval` | `object` | 最终推荐性能与补充指标 |
+| `metadata` | `object` | 额外实验配置、说明信息、扩展字段 |
+
+## `round_metrics` 子结构建议
+
+每轮建议至少包含以下字段：
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `round_index` | `number` | 当前轮次 |
+| `participant_count` | `number` | 本轮参与客户端数 |
+| `malicious_client_count` | `number` | 本轮恶意客户端数 |
+| `train_loss` | `number \| null` | 本轮训练损失 |
+| `attack_success_rate` | `number \| null` | 本轮攻击效果 |
+| `privacy_risk_score` | `number \| null` | 本轮隐私风险 |
+| `robustness_score` | `number \| null` | 本轮鲁棒性分数 |
+| `extra` | `object` | 预留扩展字段 |
+
+## `final_eval` 子结构建议
+
+建议至少包含：
+
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| `recall20` | `number \| null` | 推荐性能指标 |
+| `ndcg20` | `number \| null` | 推荐性能指标 |
+| `loss` | `number \| null` | 最终损失或聚合损失 |
+| `extra` | `object` | 其他结果指标 |
+
+## 建议字段补充说明
+
+### 1. `experiment_id`
+
+建议由训练入口在实验开始时生成，保持唯一且稳定，便于后续：
+
+- 前端查询任务状态
+- API 查询实验详情
+- 历史实验列表关联
+
+### 2. `attack_type` / `defense_type`
+
+建议统一使用稳定字符串，而不是直接暴露内部类名。这样后续：
+
+- API 更容易保持兼容
+- 前端展示更稳定
+- 实验对比更容易做筛选
+
+### 3. `malicious_clients`
+
+建议记录客户端标识列表，而不是只记录数量。这样后续：
+
+- 可以支持更细的回放和分析
+- 可以在前端展示恶意客户端分布
+- 可以为防御效果评估提供依据
+
+### 4. `round_metrics`
+
+这是未来最关键的结果区块之一。建议每轮都记录统一结构，便于：
+
+- 训练过程可视化
+- 攻击 / 防御效果曲线绘制
+- API 按轮返回
+
+### 5. `attack_success_rate` / `privacy_risk_score` / `robustness_score`
+
+这三个字段适合作为顶层摘要指标，方便前端直接展示，也方便后续做实验横向对比。
+
+## 当前代码中的对应草案
+
+本轮在 `privacy_eval/result_schema.py` 中提供了一个最小 dataclass 草案：
+
+- `RoundMetric`
+- `FinalEval`
+- `ExperimentResult`
+
+它们当前不接入训练逻辑，只作为后续后端与前端协议设计的结构基础。

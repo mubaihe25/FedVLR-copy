@@ -85,6 +85,8 @@ class FederatedTrainer(Trainer):
             self.config["clients_sample_ratio"],
             self.last_participants,
         )
+        round_index = epoch_idx + 1
+        self.experiment_hooks.start_round(round_index, sampled_clients)
 
         # Store the selected clients for the next round
         self.last_participants = sampled_clients
@@ -106,15 +108,31 @@ class FederatedTrainer(Trainer):
             total_loss += client_losses[-1]
             user_losses.append(client_losses[-1])
 
-            participant_params[user] = self._store_client_model(user, client_model)
+            client_update = self._store_client_model(user, client_model)
+            participant_params[user] = self.experiment_hooks.after_local_train(
+                round_index=round_index,
+                client_id=user,
+                client_update=client_update,
+            )
 
         # Aggregate the client model parameters in the server side
+        participant_params = self.experiment_hooks.before_aggregation(
+            round_index=round_index,
+            participant_params=participant_params,
+        )
         self._aggregate_params(participant_params)
 
         # Update the model hyperparameters
         self._update_hyperparams(epoch_idx)
 
-        return total_loss / len(sampled_clients), user_losses
+        round_loss = total_loss / len(sampled_clients)
+        self.experiment_hooks.finish_train_round(
+            round_index=round_index,
+            train_loss=round_loss,
+            participant_count=len(sampled_clients),
+        )
+
+        return round_loss, user_losses
 
     def _train_client(
         self, client_model, client_optimizer, client_loader, user=None, epoch_idx=None
@@ -171,6 +189,13 @@ class FederatedTrainer(Trainer):
                 < self.config["tol"]
             ):
                 break
+
+        if user is not None and epoch_idx is not None:
+            self.experiment_hooks.record_client_train(
+                round_index=epoch_idx + 1,
+                client_id=user,
+                client_losses=client_losses,
+            )
 
         return client_losses
 
