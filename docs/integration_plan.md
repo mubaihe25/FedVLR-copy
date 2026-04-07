@@ -223,3 +223,42 @@
 
 默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只做
 检测和记录，不会修改聚合输入、loss 或参数更新。
+
+## 第一个 FSHA-inspired attack-like 模块：ClientPreferenceLeakageProbe
+
+当前新增了第一个参考 FSHA 思想的 attack-like 模块：
+`ClientPreferenceLeakageProbe`。
+
+它的定位不是主动攻击器，而是一个只读的隐私泄露风险探针：
+
+- 只在联邦训练的聚合前阶段观察 `participant_params`
+- 不训练额外网络，不做重建器
+- 只基于客户端更新的可观测统计量估计潜在偏好泄露风险
+
+它参考的是 FSHA 一类方法的核心思想：
+
+- 在 split learning 中，服务器可观测到的中间量可能泄露客户端隐私
+- 在当前联邦推荐场景中，我们先不做真实重建，而是从客户端更新出发，
+  做一个简化版的偏好泄露风险探针
+
+当前采用的启发式风险分数结合了：
+
+- 更新范数
+- 非零程度
+- top-k 更新强度集中度
+
+当前主要输出：
+
+- `leakage_scores`
+- `high_risk_clients`
+- `high_risk_client_count`
+- `risk_rule`
+- `num_clients`
+- `avg_leakage_score`
+- `max_leakage_score`
+
+该 probe 通过 `enabled_attacks` 配置启用，并沿用统一的
+`registry -> ExperimentHookManager -> round_metrics.extra` 链路接入。
+
+默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只做
+观察和记录，不会修改客户端训练、聚合输入、loss 或参数更新。

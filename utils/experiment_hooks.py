@@ -312,7 +312,7 @@ class ExperimentHookManager:
     def before_aggregation(self, round_index: int, participant_params: Any) -> Any:
         round_state = self._get_round_state(round_index)
 
-        if self.enabled:
+        if self.enabled or self.attacks:
             for attack in self.attacks:
                 participant_params = attack.before_aggregation(participant_params, round_state)
         if self.enabled or self.defenses:
@@ -413,6 +413,10 @@ class ExperimentHookManager:
 
         self.result.metadata["best_valid_result"] = best_valid_result or {}
         self.result.metadata["best_test_result"] = best_test_result or {}
+        self.result.metadata["attack_summaries"] = {
+            attack.name: attack.summarize(self.result.metadata)
+            for attack in self.attacks
+        }
         self.result.metadata["defense_summaries"] = {
             defense.name: defense.summarize(self.result.metadata)
             for defense in self.defenses

@@ -179,3 +179,25 @@
 
 同时建议在 `metadata.defense_summaries` 中记录整场实验的 detector summary，
 例如检测轮次数和可疑客户端计数统计。
+
+## 当前已接入的第一个 FSHA-inspired attack-like 模块
+
+目前第一个参考 FSHA 思想、但保持只读的 attack-like 模块已接入：
+
+- `client_preference_leakage_probe`
+- `clientpreferenceleakageprobe`
+
+它只在聚合前观察客户端更新，不参与客户端训练修改，也不修改聚合输入。
+
+当前建议在 `round_metrics.extra.attack_metrics` 中记录：
+
+- `leakage_scores`
+- `high_risk_clients`
+- `high_risk_client_count`
+- `risk_rule`
+- `num_clients`
+- `avg_leakage_score`
+- `max_leakage_score`
+
+同时建议在 `metadata.attack_summaries` 中记录整场实验的 probe summary，
+例如高风险客户端轮次数和累计高风险计数统计。

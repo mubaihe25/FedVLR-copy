@@ -67,3 +67,9 @@ class BaseAttack:
     def collect_metrics(self) -> Dict[str, Any]:
         """Return serializable attack-side metrics."""
         return {}
+
+    def summarize(
+        self, experiment_metadata: Optional[MutableMapping[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Return serializable experiment-level attack summaries."""
+        return {}
