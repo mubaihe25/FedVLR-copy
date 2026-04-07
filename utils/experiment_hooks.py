@@ -9,6 +9,8 @@ This module is intentionally lightweight:
 from __future__ import annotations
 
 from datetime import datetime
+import math
+import random
 from typing import Any, Dict, List, Optional
 
 from attacks.base_attack import BaseAttack
@@ -24,6 +26,22 @@ class ExperimentHookManager:
         self.config = config
         self.enabled = bool(config.get("enable_experiment_hooks", False))
         self.collect_round_metrics = bool(config.get("collect_round_metrics", True))
+        self.enable_malicious_clients = bool(
+            config.get("enable_malicious_clients", False)
+        )
+        self.malicious_client_mode = str(
+            config.get("malicious_client_mode", "none")
+        ).lower()
+        self.malicious_client_ratio = float(config.get("malicious_client_ratio", 0.0) or 0.0)
+        configured_malicious_ids = (
+            config.get("malicious_client_ids")
+            or config.get("malicious_clients")
+            or []
+        )
+        self.configured_malicious_client_ids = [
+            str(client_id) for client_id in configured_malicious_ids
+        ]
+        self.base_seed = int(config.get("seed", 0) or 0)
 
         self.attacks: List[BaseAttack] = []
         self.defenses: List[BaseDefense] = []
@@ -42,13 +60,18 @@ class ExperimentHookManager:
             {
                 "hooks_enabled": self.enabled,
                 "round_metrics_enabled": self.collect_round_metrics,
+                "enable_malicious_clients": self.enable_malicious_clients,
+                "malicious_client_mode": self.malicious_client_mode,
+                "malicious_client_ratio": self.malicious_client_ratio,
+                "configured_malicious_client_ids": list(
+                    self.configured_malicious_client_ids
+                ),
                 "type": config.get("type"),
                 "comment": config.get("comment"),
             }
         )
 
-        malicious_clients = config.get("malicious_clients", []) or []
-        self.result.malicious_clients = [str(client_id) for client_id in malicious_clients]
+        self.result.malicious_clients = []
 
     def _build_experiment_id(self) -> str:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -89,11 +112,47 @@ class ExperimentHookManager:
                     return None
         return None
 
+    def _update_global_malicious_clients(self, round_malicious_clients: List[str]) -> None:
+        existing = list(self.result.malicious_clients)
+        for client_id in round_malicious_clients:
+            if client_id not in existing:
+                existing.append(client_id)
+        self.result.malicious_clients = existing
+
+    def _resolve_round_malicious_clients(
+        self, round_index: int, participant_clients: List[str]
+    ) -> List[str]:
+        if not self.enable_malicious_clients:
+            return []
+
+        if self.configured_malicious_client_ids:
+            configured = set(self.configured_malicious_client_ids)
+            return [client_id for client_id in participant_clients if client_id in configured]
+
+        if self.malicious_client_mode == "ratio" and self.malicious_client_ratio > 0:
+            num_participants = len(participant_clients)
+            if num_participants == 0:
+                return []
+
+            num_malicious = min(
+                num_participants,
+                max(1, int(math.ceil(num_participants * self.malicious_client_ratio))),
+            )
+            rng = random.Random(self.base_seed + round_index)
+            return rng.sample(participant_clients, num_malicious)
+
+        return []
+
     def start_round(self, round_index: int, sampled_clients: List[Any]) -> Dict[str, Any]:
         round_state = self._get_round_state(round_index)
         participant_clients = [str(client_id) for client_id in sampled_clients]
+        round_malicious_clients = self._resolve_round_malicious_clients(
+            round_index, participant_clients
+        )
         round_state["sampled_clients"] = participant_clients
         round_state["participant_count"] = len(sampled_clients)
+        round_state["malicious_clients"] = list(round_malicious_clients)
+        self._update_global_malicious_clients(round_malicious_clients)
 
         if self.collect_round_metrics:
             metric = self._upsert_round_metric(round_index)
@@ -102,8 +161,8 @@ class ExperimentHookManager:
             metric.num_participants = len(sampled_clients)
             metric.participant_count = len(sampled_clients)
             metric.hooks_enabled = self.enabled
-            metric.malicious_clients = list(self.result.malicious_clients)
-            metric.malicious_client_count = len(self.result.malicious_clients)
+            metric.malicious_clients = list(round_malicious_clients)
+            metric.malicious_client_count = len(round_malicious_clients)
 
         if self.enabled:
             for attack in self.attacks:
@@ -156,19 +215,21 @@ class ExperimentHookManager:
 
         metric = self._upsert_round_metric(round_index)
         round_state = self._get_round_state(round_index)
+        round_malicious_clients = list(round_state.get("malicious_clients", []))
 
         metric.round_id = round_index
         metric.participant_clients = list(round_state.get("sampled_clients", []))
         metric.num_participants = participant_count
         metric.participant_count = participant_count
         metric.avg_train_loss = None if train_loss is None else float(train_loss)
-        metric.malicious_client_count = len(self.result.malicious_clients)
-        metric.malicious_clients = list(self.result.malicious_clients)
+        metric.malicious_client_count = len(round_malicious_clients)
+        metric.malicious_clients = round_malicious_clients
         metric.hooks_enabled = self.enabled
         metric.train_loss = None if train_loss is None else float(train_loss)
         metric.extra.update(
             {
                 "sampled_clients": round_state.get("sampled_clients", []),
+                "malicious_clients": round_malicious_clients,
                 "client_losses": round_state.get("client_losses", {}),
             }
         )
@@ -187,10 +248,12 @@ class ExperimentHookManager:
             return
 
         metric = self._upsert_round_metric(round_index)
+        round_state = self._get_round_state(round_index)
+        round_malicious_clients = list(round_state.get("malicious_clients", []))
         metric.round_id = round_index
         metric.hooks_enabled = self.enabled
-        metric.malicious_clients = list(self.result.malicious_clients)
-        metric.malicious_client_count = len(self.result.malicious_clients)
+        metric.malicious_clients = round_malicious_clients
+        metric.malicious_client_count = len(round_malicious_clients)
         if train_loss is not None and metric.train_loss is None:
             metric.train_loss = float(train_loss)
         if train_loss is not None and metric.avg_train_loss is None:
@@ -203,6 +266,7 @@ class ExperimentHookManager:
                 "stop_flag": bool(stop_flag),
                 "valid_result": valid_result or {},
                 "test_result": test_result or {},
+                "malicious_clients": round_malicious_clients,
             }
         )
 

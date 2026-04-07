@@ -96,6 +96,10 @@
 
 - `enable_experiment_hooks`：默认 `False`
 - `collect_round_metrics`：默认 `True`
+- `enable_malicious_clients`：默认 `False`
+- `malicious_client_mode`：默认 `none`
+- `malicious_client_ratio`：默认 `0.0`
+- `malicious_client_ids`：默认空列表
 
 默认情况下：
 
@@ -107,6 +111,7 @@
 - 不修改现有模型参数更新行为
 
 当前只会在内存中记录最基础的 round 信息，供未来 API / 前端接入时复用。
+当前的 `malicious_clients` 也只是占位配置与占位记录，不会改变任何客户端的训练行为。
 
 ### 本轮已预留的调用点
 
@@ -115,6 +120,7 @@
 已接入：
 
 - round 开始时初始化 round state
+- round 开始时按配置生成本轮 `malicious_clients` 占位列表
 - 本地训练完成后预留 `after_local_train`
 - 聚合前预留 `before_aggregation`
 - round 结束时记录最基础的 round loss 和 participant 数量
@@ -137,7 +143,7 @@
 后续如果要真正实现扩展，可沿用当前 manager：
 
 - attack：
-  在 `after_local_train` 或 `before_aggregation` 中接入客户端更新篡改、恶意客户端策略等逻辑。
+  在 `after_local_train` 或 `before_aggregation` 中接入客户端更新篡改、恶意客户端策略等逻辑。当前生成的 `malicious_clients` 列表可直接作为攻击目标集合。
 - defense：
   在 `before_aggregation` 或具体 Trainer 的 `_aggregate_params` 周围接入异常检测、鲁棒聚合、安全聚合等逻辑。
 - privacy_eval：

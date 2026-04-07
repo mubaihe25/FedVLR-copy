@@ -15,7 +15,7 @@
 | `dataset` | `string` | 当前数据集 |
 | `attack_type` | `string \| null` | 当前攻击类型，未启用时可为空 |
 | `defense_type` | `string \| null` | 当前防御类型，未启用时可为空 |
-| `malicious_clients` | `string[]` | 被标记为恶意的客户端列表 |
+| `malicious_clients` | `string[]` | 被标记为恶意的客户端列表，当前由占位配置生成，不代表真实攻击已启用 |
 | `round_metrics` | `list` | 每轮训练的结构化指标 |
 | `attack_success_rate` | `number \| null` | 攻击成功率或攻击效果指标 |
 | `privacy_risk_score` | `number \| null` | 隐私风险评分 |
@@ -37,7 +37,7 @@
 | `valid_score` | `number \| null` | 本轮验证分数，通常对应当前 `valid_metric` |
 | `test_score` | `number \| null` | 本轮测试分数，建议与 `valid_score` 使用同一指标口径 |
 | `hooks_enabled` | `boolean` | 本轮是否启用了实验 hooks |
-| `malicious_clients` | `string[]` | 本轮恶意客户端列表，当前默认可为空 |
+| `malicious_clients` | `string[]` | 本轮恶意客户端列表，当前由 fixed ids 或 ratio 占位生成，默认可为空 |
 | `participant_count` | `number` | 兼容旧字段，含义与 `num_participants` 一致 |
 | `malicious_client_count` | `number` | 本轮恶意客户端数 |
 | `train_loss` | `number \| null` | 兼容旧字段，含义与 `avg_train_loss` 一致 |
@@ -82,6 +82,15 @@
 - 可以支持更细的回放和分析
 - 可以在前端展示恶意客户端分布
 - 可以为防御效果评估提供依据
+
+当前代码已支持以下占位配置项：
+
+- `enable_malicious_clients`
+- `malicious_client_mode`
+- `malicious_client_ratio`
+- `malicious_client_ids`
+
+但这些配置当前只用于生成“记录层面的恶意客户端列表”，不会改变客户端训练、聚合或参数更新行为。后续真实 attack 接入时，可直接基于这些列表选择目标客户端。
 
 ### 4. `round_metrics`
 
