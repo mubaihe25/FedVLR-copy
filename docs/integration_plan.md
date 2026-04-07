@@ -257,6 +257,14 @@
 - `avg_leakage_score`
 - `max_leakage_score`
 
+当前它还会与 `malicious_clients` 占位配置联动，补充记录：
+
+- `all_clients_count`
+- `malicious_target_clients`
+- `malicious_target_count`
+- `malicious_target_scores`
+- `malicious_target_avg_score`
+
 该 probe 通过 `enabled_attacks` 配置启用，并沿用统一的
 `registry -> ExperimentHookManager -> round_metrics.extra` 链路接入。
 

@@ -105,6 +105,9 @@ class ClientPreferenceLeakageProbe(BaseAttack):
     ) -> MutableMapping[str, Any]:
         client_features: Dict[str, Dict[str, float]] = {}
         leakage_scores: Dict[str, float] = {}
+        malicious_target_clients = [
+            str(client_id) for client_id in round_state.get("malicious_clients", [])
+        ]
 
         if isinstance(participant_params, dict):
             for client_id, client_update in participant_params.items():
@@ -115,6 +118,18 @@ class ClientPreferenceLeakageProbe(BaseAttack):
                 client_features[client_id_str] = features
                 leakage_scores[client_id_str] = float(features["leakage_score"])
 
+        malicious_target_scores = {
+            client_id: leakage_scores[client_id]
+            for client_id in malicious_target_clients
+            if client_id in leakage_scores
+        }
+        malicious_target_score_values = list(malicious_target_scores.values())
+        malicious_target_avg_score = (
+            float(sum(malicious_target_score_values) / len(malicious_target_score_values))
+            if malicious_target_score_values
+            else None
+        )
+
         if not leakage_scores:
             probe_result = {
                 "leakage_scores": {},
@@ -122,9 +137,14 @@ class ClientPreferenceLeakageProbe(BaseAttack):
                 "high_risk_client_count": 0,
                 "risk_rule": "leakage_score > mean + std_factor * std",
                 "num_clients": 0,
+                "all_clients_count": 0,
                 "avg_leakage_score": None,
                 "max_leakage_score": None,
                 "risk_threshold": None,
+                "malicious_target_clients": malicious_target_clients,
+                "malicious_target_count": len(malicious_target_scores),
+                "malicious_target_scores": malicious_target_scores,
+                "malicious_target_avg_score": malicious_target_avg_score,
                 "client_features": {},
             }
         else:
@@ -146,9 +166,14 @@ class ClientPreferenceLeakageProbe(BaseAttack):
                 "high_risk_client_count": len(high_risk_clients),
                 "risk_rule": "leakage_score > mean + std_factor * std",
                 "num_clients": len(leakage_scores),
+                "all_clients_count": len(leakage_scores),
                 "avg_leakage_score": avg_score,
                 "max_leakage_score": float(max(score_values)),
                 "risk_threshold": risk_threshold,
+                "malicious_target_clients": malicious_target_clients,
+                "malicious_target_count": len(malicious_target_scores),
+                "malicious_target_scores": malicious_target_scores,
+                "malicious_target_avg_score": malicious_target_avg_score,
                 "client_features": client_features,
                 "topk_ratio": self.topk_ratio,
                 "std_factor": self.std_factor,
@@ -174,17 +199,48 @@ class ClientPreferenceLeakageProbe(BaseAttack):
                 "rounds_with_high_risk_clients": 0,
                 "total_high_risk_detections": 0,
                 "max_high_risk_client_count": 0,
+                "rounds_with_malicious_targets": 0,
+                "total_malicious_target_observations": 0,
+                "avg_malicious_target_score": None,
+                "max_malicious_target_score": None,
                 "risk_rule": "leakage_score > mean + std_factor * std",
                 "topk_ratio": self.topk_ratio,
                 "std_factor": self.std_factor,
             }
 
         risk_counts = [int(item.get("high_risk_client_count", 0)) for item in self.history]
+        malicious_target_counts = [
+            int(item.get("malicious_target_count", 0)) for item in self.history
+        ]
+        malicious_target_avg_values = [
+            float(item["malicious_target_avg_score"])
+            for item in self.history
+            if item.get("malicious_target_avg_score") is not None
+        ]
+        malicious_target_max_values = [
+            max(item.get("malicious_target_scores", {}).values())
+            for item in self.history
+            if item.get("malicious_target_scores")
+        ]
         return {
             "num_rounds": len(self.history),
             "rounds_with_high_risk_clients": sum(1 for count in risk_counts if count > 0),
             "total_high_risk_detections": int(sum(risk_counts)),
             "max_high_risk_client_count": int(max(risk_counts)),
+            "rounds_with_malicious_targets": sum(
+                1 for count in malicious_target_counts if count > 0
+            ),
+            "total_malicious_target_observations": int(sum(malicious_target_counts)),
+            "avg_malicious_target_score": (
+                float(sum(malicious_target_avg_values) / len(malicious_target_avg_values))
+                if malicious_target_avg_values
+                else None
+            ),
+            "max_malicious_target_score": (
+                float(max(malicious_target_max_values))
+                if malicious_target_max_values
+                else None
+            ),
             "risk_rule": "leakage_score > mean + std_factor * std",
             "topk_ratio": self.topk_ratio,
             "std_factor": self.std_factor,

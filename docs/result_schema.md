@@ -198,6 +198,12 @@
 - `num_clients`
 - `avg_leakage_score`
 - `max_leakage_score`
+- `all_clients_count`
+- `malicious_target_clients`
+- `malicious_target_count`
+- `malicious_target_scores`
+- `malicious_target_avg_score`
 
 同时建议在 `metadata.attack_summaries` 中记录整场实验的 probe summary，
-例如高风险客户端轮次数和累计高风险计数统计。
+例如高风险客户端轮次数、累计高风险计数统计，以及 malicious target
+相关的观测轮次数与平均风险分数。
