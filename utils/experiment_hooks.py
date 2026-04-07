@@ -547,3 +547,6 @@ class ExperimentHookManager:
 
     def to_dict(self) -> Dict[str, Any]:
         return self.result.to_dict()
+
+    def to_summary_dict(self) -> Dict[str, Any]:
+        return self.result.to_summary_dict()

@@ -434,6 +434,44 @@ def save_experiment_results(
     df.to_csv(csv_filename, index=False)
 
 
+def save_experiment_json_outputs(
+    config,
+    experiment_result_dict,
+    experiment_summary_dict,
+):
+    """Save detailed and summary experiment outputs as JSON files."""
+    import json
+    import os
+
+    result_file_name = config.get("result_file_name")
+    if not result_file_name:
+        raise ValueError("config['result_file_name'] is required for JSON export")
+
+    output_dir = os.path.dirname(result_file_name) or "."
+    os.makedirs(output_dir, exist_ok=True)
+
+    base_name = os.path.splitext(os.path.basename(result_file_name))[0]
+    detail_path = os.path.join(output_dir, f"{base_name}.experiment_result.json")
+    summary_path = os.path.join(output_dir, f"{base_name}.experiment_summary.json")
+
+    dump_kwargs = {
+        "ensure_ascii": False,
+        "indent": 2,
+        "default": str,
+    }
+
+    with open(detail_path, "w", encoding="utf-8") as detail_file:
+        json.dump(experiment_result_dict, detail_file, **dump_kwargs)
+
+    with open(summary_path, "w", encoding="utf-8") as summary_file:
+        json.dump(experiment_summary_dict, summary_file, **dump_kwargs)
+
+    return {
+        "experiment_result_path": detail_path,
+        "experiment_summary_path": summary_path,
+    }
+
+
 def find_best_parameters(
     csv_filename="experiment_results.csv", metric="ndcg@10", maximize=True
 ):

@@ -364,3 +364,66 @@
 - 本轮 `malicious_clients`
 
 这些增强只作用于结果表达层，不改变训练算法、loss、聚合或模型结构。
+
+## 详细版 + 摘要版双结果输出
+
+当前系统已经同时支持两类实验结果视图：
+
+- 详细版结果：保留完整的 `experiment_result_dict`
+- 摘要版结果：提供轻量的 `experiment_summary_dict`
+
+两者职责区分如下：
+
+- 详细版用于调试、研究复盘、查看每轮明细和大字段字典
+- 摘要版用于未来 API、前端和比赛答辩展示
+
+当前摘要版重点保留：
+
+- `experiment_id`
+- `model`
+- `dataset`
+- `experiment_mode`
+- `scenario_tags`
+- `active_attacks`
+- `active_defenses`
+- `active_privacy_metrics`
+- `malicious_client_summary`
+- `final_eval`
+- `round_summaries`
+
+其中 `round_summaries` 只保留每轮关键字段，例如：
+
+- `round_id`
+- `num_participants`
+- `avg_train_loss`
+- `valid_score`
+- `test_score`
+- `malicious_client_count`
+- `attacked_client_count`
+- `clipped_client_count`
+- `pipeline_info`
+
+像 `participant_clients` 全量列表、`leakage_scores` 全量字典、`norms_before`
+和 `norms_after` 全量字典等大字段，仍然只保留在详细版中。
+## 结果自动写盘
+
+当前在训练结束后的统一结果出口中，已经同时支持两类 JSON 自动写盘：
+
+- 详细版：`trainer.experiment_result_dict`
+- 摘要版：`trainer.experiment_summary_dict`
+
+写盘位置沿用现有结果目录：
+
+- `outputs/results/{model}/{dataset}/{type}/`
+
+命名方式复用当前实验的 `result_file_name` 主名，再追加：
+
+- `*.experiment_result.json`
+- `*.experiment_summary.json`
+
+这样可以保持：
+
+- 详细版继续服务调试、研究和复盘
+- 摘要版直接服务后续 API、前端和比赛展示
+
+这一步只增强结果导出链路，不修改训练算法、loss、聚合或模型结构。

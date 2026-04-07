@@ -64,6 +64,84 @@ class ExperimentResult:
         """Convert nested dataclasses into a plain serializable dictionary."""
         return asdict(self)
 
+    def to_summary_dict(self) -> Dict[str, Any]:
+        """Convert the full experiment result into a lightweight summary."""
+        return build_experiment_summary(self)
+
+
+def _sum_metric_counts(metric_outputs: Dict[str, Any], field_name: str) -> int:
+    total = 0
+    for metric_output in metric_outputs.values():
+        if not isinstance(metric_output, dict):
+            continue
+        value = metric_output.get(field_name, 0)
+        try:
+            total += int(value)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _build_pipeline_summary(pipeline_info: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(pipeline_info, dict):
+        return {}
+    return {
+        "active_attacks": list(pipeline_info.get("active_attacks", [])),
+        "active_defenses": list(pipeline_info.get("active_defenses", [])),
+        "active_privacy_metrics": list(
+            pipeline_info.get("active_privacy_metrics", [])
+        ),
+        "experiment_mode": pipeline_info.get("experiment_mode"),
+        "scenario_tags": list(pipeline_info.get("scenario_tags", [])),
+        "malicious_client_count": int(pipeline_info.get("malicious_client_count", 0)),
+    }
+
+
+def build_round_summary(round_metric: RoundMetric) -> Dict[str, Any]:
+    """Build a lightweight summary for a single round."""
+    extra = round_metric.extra or {}
+    attack_metrics = extra.get("attack_metrics", {})
+    defense_metrics = extra.get("defense_metrics", {})
+    pipeline_info = extra.get("pipeline_info", {})
+
+    return {
+        "round_id": round_metric.round_id or round_metric.round_index,
+        "num_participants": round_metric.num_participants or round_metric.participant_count,
+        "avg_train_loss": round_metric.avg_train_loss
+        if round_metric.avg_train_loss is not None
+        else round_metric.train_loss,
+        "valid_score": round_metric.valid_score,
+        "test_score": round_metric.test_score,
+        "malicious_client_count": round_metric.malicious_client_count,
+        "attacked_client_count": _sum_metric_counts(
+            attack_metrics, "attacked_client_count"
+        ),
+        "clipped_client_count": _sum_metric_counts(
+            defense_metrics, "clipped_client_count"
+        ),
+        "pipeline_info": _build_pipeline_summary(pipeline_info),
+    }
+
+
+def build_experiment_summary(result: ExperimentResult) -> Dict[str, Any]:
+    """Build a lightweight experiment summary for API/frontend consumption."""
+    metadata = result.metadata or {}
+    return {
+        "experiment_id": result.experiment_id,
+        "model": result.model,
+        "dataset": result.dataset,
+        "experiment_mode": result.experiment_mode,
+        "scenario_tags": list(result.scenario_tags),
+        "active_attacks": list(result.active_attacks),
+        "active_defenses": list(result.active_defenses),
+        "active_privacy_metrics": list(result.active_privacy_metrics),
+        "malicious_client_summary": metadata.get("malicious_client_summary", {}),
+        "final_eval": asdict(result.final_eval),
+        "round_summaries": [
+            build_round_summary(round_metric) for round_metric in result.round_metrics
+        ],
+    }
+
 
 def build_empty_result(experiment_id: str, model: str, dataset: str) -> ExperimentResult:
     """Build an empty result payload with required identity fields."""

@@ -286,3 +286,82 @@
 - `pipeline_info`
 
 这些字段只增强实验结果表达能力，不改变现有训练逻辑。
+
+## 详细版与摘要版结果结构
+
+当前建议同时保留两类结果结构：
+
+### 1. 详细版结果
+
+对应当前完整的 `experiment_result_dict`，适合：
+
+- 调试
+- 研究复盘
+- 查看每轮大字段明细
+- 分析攻击、防御、隐私观测模块的完整输出
+
+详细版继续保留原有字段，不删除任何已有信息。
+
+### 2. 摘要版结果
+
+对应新的 `experiment_summary_dict`，适合：
+
+- API 返回轻量结果
+- 前端直接展示
+- 比赛答辩材料中的场景对照说明
+
+当前摘要版建议保留：
+
+- `experiment_id`
+- `model`
+- `dataset`
+- `experiment_mode`
+- `scenario_tags`
+- `active_attacks`
+- `active_defenses`
+- `active_privacy_metrics`
+- `malicious_client_summary`
+- `final_eval`
+- `round_summaries`
+
+其中 `round_summaries` 每轮只保留关键字段：
+
+- `round_id`
+- `num_participants`
+- `avg_train_loss`
+- `valid_score`
+- `test_score`
+- `malicious_client_count`
+- `attacked_client_count`
+- `clipped_client_count`
+- `pipeline_info`
+
+当前刻意不放入摘要版的大字段包括：
+
+- `participant_clients` 全量列表
+- `leakage_scores` 全量字典
+- `malicious_target_scores` 全量字典
+- `norms_before / norms_after` 全量字典
+- `client_scores` 全量字典
+
+这些字段仍然保留在详细版，用于调试和复盘。
+## 自动写盘约定
+
+当前训练结束后会自动把两类结果写入现有 results 目录：
+
+- 详细版：`*.experiment_result.json`
+- 摘要版：`*.experiment_summary.json`
+
+输出目录沿用现有结果路径体系：
+
+- `outputs/results/{model}/{dataset}/{type}/`
+
+文件名默认复用当前 `result_file_name` 的主名，再追加后缀。例如：
+
+- `[FedRAP]-[KU]-[Contrast.attack_only].experiment_result.json`
+- `[FedRAP]-[KU]-[Contrast.attack_only].experiment_summary.json`
+
+其中：
+
+- 详细版适合调试、研究和复盘，保留完整字段
+- 摘要版适合 API、前端和答辩展示，只保留轻量关键字段

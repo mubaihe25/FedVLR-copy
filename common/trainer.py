@@ -16,7 +16,12 @@ from torch.nn.utils.clip_grad import clip_grad_norm_
 
 from utils.experiment_hooks import ExperimentHookManager
 from utils.topk_evaluator import TopKEvaluator
-from utils.utils import early_stopping, dict2str, get_resource_usage_gb
+from utils.utils import (
+    dict2str,
+    early_stopping,
+    get_resource_usage_gb,
+    save_experiment_json_outputs,
+)
 
 
 class AbstractTrainer(object):
@@ -106,6 +111,7 @@ class Trainer(AbstractTrainer):
         self.experiment_hooks = ExperimentHookManager(config)
         self.experiment_result = self.experiment_hooks.result
         self.experiment_result_dict = self.experiment_result.to_dict()
+        self.experiment_summary_dict = self.experiment_result.to_summary_dict()
 
     def _build_optimizer(self):
         """初始化优化器"""
@@ -385,6 +391,22 @@ class Trainer(AbstractTrainer):
             self.best_valid_result, self.best_test_upon_valid
         )
         self.experiment_result_dict = self.experiment_hooks.to_dict()
+        self.experiment_summary_dict = self.experiment_hooks.to_summary_dict()
+        try:
+            json_output_paths = save_experiment_json_outputs(
+                self.config,
+                self.experiment_result_dict,
+                self.experiment_summary_dict,
+            )
+            self.logger.info(
+                "Experiment JSON outputs saved: result=%s, summary=%s",
+                json_output_paths["experiment_result_path"],
+                json_output_paths["experiment_summary_path"],
+            )
+        except Exception as export_error:
+            self.logger.warning(
+                "Experiment JSON export skipped due to error: %s", export_error
+            )
         return self.best_valid_score, self.best_valid_result, self.best_test_upon_valid
 
     @torch.no_grad()
