@@ -140,3 +140,22 @@
 - `ExperimentResult`
 
 它们当前不接入训练逻辑，只作为后续后端与前端协议设计的结构基础。
+
+## 当前已接入的第一个真实 privacy metric
+
+目前第一个真实 privacy metric 已接入：
+
+- `client_update_norm`
+- `clientupdatenormmetric`
+
+它只做观察型统计，不参与训练或聚合修改。
+
+当前建议在 `round_metrics.extra.privacy_metric_outputs` 中记录：
+
+- `avg_update_norm`
+- `max_update_norm`
+- `min_update_norm`
+- `num_clients`
+
+同时建议在 `metadata.privacy_metric_summaries` 中记录整场实验的 summary，
+例如跨轮平均值和全局最大/最小更新范数。

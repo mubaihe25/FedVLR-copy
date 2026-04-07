@@ -165,9 +165,17 @@ class ExperimentHookManager:
     def _collect_defense_metrics(self) -> Dict[str, Any]:
         return {defense.name: defense.collect_metrics() for defense in self.defenses}
 
-    def _collect_privacy_metrics(self, round_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _collect_privacy_metrics(
+        self,
+        round_state: Dict[str, Any],
+        participant_params: Any,
+        aggregation_result: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        aggregation_result = aggregation_result or {}
         return {
-            metric.name: metric.evaluate_round(round_state, {}, {})
+            metric.name: metric.evaluate_round(
+                round_state, participant_params, aggregation_result
+            )
             for metric in self.privacy_metrics
         }
 
@@ -312,6 +320,11 @@ class ExperimentHookManager:
                     participant_params, round_state
                 )
 
+        round_state["privacy_metric_outputs"] = self._collect_privacy_metrics(
+            round_state=round_state,
+            participant_params=participant_params,
+            aggregation_result={},
+        )
         return participant_params
 
     def finish_train_round(
@@ -340,7 +353,7 @@ class ExperimentHookManager:
                 "client_losses": round_state.get("client_losses", {}),
                 "attack_metrics": self._collect_attack_metrics(),
                 "defense_metrics": self._collect_defense_metrics(),
-                "privacy_metric_outputs": self._collect_privacy_metrics(round_state),
+                "privacy_metric_outputs": round_state.get("privacy_metric_outputs", {}),
             }
         )
 
@@ -382,6 +395,7 @@ class ExperimentHookManager:
                 "loaded_privacy_metrics": [
                     metric_obj.name for metric_obj in self.privacy_metrics
                 ],
+                "privacy_metric_outputs": round_state.get("privacy_metric_outputs", {}),
             }
         )
 
@@ -398,6 +412,10 @@ class ExperimentHookManager:
 
         self.result.metadata["best_valid_result"] = best_valid_result or {}
         self.result.metadata["best_test_result"] = best_test_result or {}
+        self.result.metadata["privacy_metric_summaries"] = {
+            metric.name: metric.summarize(self.result.metadata)
+            for metric in self.privacy_metrics
+        }
         return self.result
 
     def to_dict(self) -> Dict[str, Any]:

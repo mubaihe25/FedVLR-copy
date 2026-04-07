@@ -172,3 +172,26 @@
 - `NoOpPrivacyMetric`
 
 这些模块通过各自的注册表注册，并在 `ExperimentHookManager` 初始化时按名称实例化。即使显式加载了 NoOp 模块，也只会做占位记录，不会改动训练、loss、聚合或参数更新。
+
+## 第一个真实 privacy metric：ClientUpdateNormMetric
+
+当前新增了第一个可运行的 privacy metric：`ClientUpdateNormMetric`。
+
+它的职责非常克制：
+
+- 只在联邦训练的聚合前阶段观察 `participant_params`
+- 只统计本轮参与客户端上传更新的范数分布
+- 只输出结构化统计结果，不修改任何训练数据或参数
+
+当前主要输出：
+
+- `avg_update_norm`
+- `max_update_norm`
+- `min_update_norm`
+- `num_clients`
+
+该 metric 通过现有 `enabled_privacy_metrics` 配置启用，并沿用统一的
+`registry -> ExperimentHookManager -> round_metrics.extra` 链路接入。
+
+默认情况下它不会启用，因此训练行为保持不变。即使启用后，它也只是做
+观察与统计，不会修改 loss、聚合算法或参数更新。
