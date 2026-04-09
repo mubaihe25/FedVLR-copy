@@ -123,7 +123,25 @@
   - 简单、可解释、可回退
   - 可直接与裁剪型防御形成最小攻防对照
 
-### 6.3 `NoOpAttack`
+### 6.3 `SignFlipAttack`
+
+- 模块类型：轻量主动攻击模块
+- 代码位置：`FedVLR/attacks/sign_flip_attack.py`
+- 插入位置：`before_aggregation`
+- 是否只读：否
+- 是否修改 `participant_params`：是
+- 作用对象：本轮 `malicious_clients` 对应的客户端更新
+- 当前作用机制：
+  - 读取 `round_state["malicious_clients"]`
+  - 对目标客户端更新执行符号翻转与比例缩放
+  - 采用最小规则：`flipped_update = - sign_flip_scale * original_update`
+  - 使用最小配置项 `sign_flip_scale`
+- 当前实验价值：
+  - 作为第二个更接近经典联邦更新攻击的主动攻击模块
+  - 与 `ClientUpdateScaleAttack` 保持同一接入风格，便于统一实验编排
+  - 能更直接体现“恶意更新方向反转”对聚合输入的影响
+
+### 6.4 `NoOpAttack`
 
 - 模块类型：占位攻击模块
 - 代码位置：`FedVLR/attacks/noop_attack.py`
@@ -168,7 +186,7 @@
   - 不替换聚合算法，只做聚合前预处理
 - 当前实验价值：
   - 作为第一个主动防御模块
-  - 能与 `ClientUpdateScaleAttack` 形成最小攻防对照
+  - 能与 `ClientUpdateScaleAttack` 或 `SignFlipAttack` 形成最小攻防对照
   - 工程风险低，解释性强
 
 ### 7.3 `NoOpDefense`
@@ -369,6 +387,7 @@
 - `ClientUpdateAnomalyDetector`
 - `ClientPreferenceLeakageProbe`
 - `ClientUpdateScaleAttack`
+- `SignFlipAttack`
 - `NormClipDefense`
 - 详细版 / 摘要版结果结构与自动写盘
 - API 只读结果接口

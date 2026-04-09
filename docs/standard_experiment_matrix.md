@@ -124,6 +124,11 @@ enable_malicious_clients: false
 - `malicious_client_ratio: 0.2`
 - `attack_scale: 3.0`
 
+当前阶段推荐把 `client_update_scale` 作为主展示攻击模块；如果需要展示第二种更接近经典联邦更新攻击的变体，也可以替换为：
+
+- `enabled_attacks: ["sign_flip"]`
+- `sign_flip_scale: 3.0`
+
 ### 关键配置项
 
 ```yaml
@@ -150,12 +155,14 @@ attack_scale: 3.0
 - `round_summaries[*].malicious_client_count`
 - 详细版中的：
   - `round_metrics[*].extra.attack_metrics.client_update_scale.attacked_client_count`
+  - 或 `round_metrics[*].extra.attack_metrics.sign_flip.attacked_client_count`
 
 ### 适合展示的重点
 
 - 攻击场景标签是否清晰
 - 恶意客户端链路是否生效
 - 攻击前后性能下降趋势
+- 可作为 `client_update_scale` 与 `sign_flip` 的轻量攻击对照入口
 
 ## 6. 标准实验三：defense_only
 
@@ -221,6 +228,11 @@ defense_clip_norm: 5.0
 - `attack_scale: 3.0`
 - `defense_clip_norm: 5.0`
 
+如果需要使用第二个主动攻击模块形成变体实验，也可以将攻击项替换为：
+
+- `enabled_attacks: ["sign_flip"]`
+- `sign_flip_scale: 3.0`
+
 ### 关键配置项
 
 ```yaml
@@ -255,6 +267,7 @@ defense_clip_norm: 5.0
 - 从攻击到防御的最小闭环
 - 场景标签、结果字段与实验模块的一一对应
 - 答辩中最适合讲清楚的主实验
+- 后续也适合扩展成 `sign_flip + norm_clip` 的对照变体
 
 ## 8. 标准实验五：attack_and_defense_with_privacy_observation
 
@@ -274,6 +287,11 @@ defense_clip_norm: 5.0
 - `malicious_client_ratio: 0.2`
 - `attack_scale: 3.0`
 - `defense_clip_norm: 5.0`
+
+如果需要保留隐私观测同时切换到第二攻击模块，也可以使用：
+
+- `enabled_attacks: ["sign_flip"]`
+- `sign_flip_scale: 3.0`
 
 ### 关键配置项
 
@@ -318,10 +336,10 @@ defense_clip_norm: 5.0
 | 场景 | 攻击 | 防御 | 隐私观测 | malicious clients | 核心展示点 |
 | --- | --- | --- | --- | --- | --- |
 | `baseline` | 无 | 无 | 无 | 关闭 | 基线性能 |
-| `attack_only` | `client_update_scale` | 无 | 无 | 开启 | 攻击影响 |
+| `attack_only` | `client_update_scale` / `sign_flip` | 无 | 无 | 开启 | 攻击影响 |
 | `defense_only` | 无 | `norm_clip` | 无 | 关闭 | 防御预处理能力 |
-| `attack_and_defense` | `client_update_scale` | `norm_clip` | 无 | 开启 | 最小攻防闭环 |
-| `attack_and_defense_with_privacy_observation` | `client_update_scale` | `norm_clip` | `client_update_norm` | 开启 | 攻防 + 隐私三重视角 |
+| `attack_and_defense` | `client_update_scale` / `sign_flip` | `norm_clip` | 无 | 开启 | 最小攻防闭环 |
+| `attack_and_defense_with_privacy_observation` | `client_update_scale` / `sign_flip` | `norm_clip` | `client_update_norm` | 开启 | 攻防 + 隐私三重视角 |
 
 ## 10. 当前最适合答辩展示的重点组合
 
@@ -371,21 +389,14 @@ defense_clip_norm: 5.0
 
 以下内容属于下一阶段规划，当前尚未实现：
 
-### 12.1 `SignFlipAttack`
-
-- 目标：提供比单纯更新缩放更强的轻量攻击方式
-- 预期场景：
-  - `attack_only`
-  - `attack_and_defense`
-
-### 12.2 `UpdateFilterDefense`
+### 12.1 `UpdateFilterDefense`
 
 - 目标：在异常检测基础上加入更主动的过滤型防御
 - 预期场景：
   - `defense_only`
   - `attack_and_defense`
 
-### 12.3 `MMFedRAP` 兼容实验
+### 12.2 `MMFedRAP` 兼容实验
 
 - 目标：将当前标准实验矩阵迁移到多模态主线
 - 预期价值：
@@ -396,6 +407,7 @@ defense_clip_norm: 5.0
 ### 当前已完成
 
 - 标准实验所需的最小模块链路已经具备
+- `SignFlipAttack` 已可作为第二个主动攻击模块接入现有标准实验场景
 - 结果结构已支持场景标签表达
 - 详细版 / 摘要版结果均可自动写盘
 
