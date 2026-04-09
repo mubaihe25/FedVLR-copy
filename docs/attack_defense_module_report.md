@@ -189,7 +189,25 @@
   - 能与 `ClientUpdateScaleAttack` 或 `SignFlipAttack` 形成最小攻防对照
   - 工程风险低，解释性强
 
-### 7.3 `NoOpDefense`
+### 7.3 `UpdateFilterDefense`
+
+- 模块类型：轻量主动防御模块
+- 代码位置：`FedVLR/defenses/update_filter_defense.py`
+- 插入位置：`before_aggregation`
+- 是否只读：否
+- 是否修改 `participant_params`：是
+- 作用对象：本轮所有客户端上传更新
+- 当前作用机制：
+  - 基于客户端更新范数计算简单异常分数
+  - 第一版规则为：`update_norm > mean + filter_std_factor * std`
+  - 对被判定为可疑的客户端更新执行聚合前过滤
+  - 使用 `max_filtered_ratio` 和“至少保留一个客户端”作为最小保护
+- 当前实验价值：
+  - 作为第二个更接近真正联邦防御的主动防御模块
+  - 与 `ClientUpdateAnomalyDetector` 的区别在于它会真实过滤聚合输入
+  - 与 `NormClipDefense` 形成“预处理裁剪 / 直接过滤”两种最小防御对照
+
+### 7.4 `NoOpDefense`
 
 - 模块类型：占位防御模块
 - 代码位置：`FedVLR/defenses/noop_defense.py`
@@ -389,6 +407,7 @@
 - `ClientUpdateScaleAttack`
 - `SignFlipAttack`
 - `NormClipDefense`
+- `UpdateFilterDefense`
 - 详细版 / 摘要版结果结构与自动写盘
 - API 只读结果接口
 - 前端历史实验页真实列表 / 摘要 / result 接入
