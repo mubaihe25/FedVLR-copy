@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FedVLR Unified Experiment Config",
+  "version": "0.1.0",
+  "description": "统一实验配置草案，用于 FedVLR 内部 launcher、后续 API 与前端配置页对齐。当前为轻量 schema，不引入额外运行时依赖。",
+  "type": "object",
+  "required": ["model", "dataset", "scenario"],
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "模型名称，例如 FedRAP、MMFedRAP、PFedRec。"
+    },
+    "dataset": {
+      "type": "string",
+      "default": "KU",
+      "description": "数据集名称。当前推荐 KU。"
+    },
+    "scenario": {
+      "type": "string",
+      "enum": ["baseline", "attack_only", "defense_only", "attack_and_defense", "privacy_observation", "custom"],
+      "description": "实验场景标签。launcher 会根据 enabled_* 给出已验证/未验证提示。"
+    },
+    "type": {
+      "type": "string",
+      "default": "LauncherExperiment",
+      "description": "FedVLR 输出目录中的 type 字段。"
+    },
+    "comment": {
+      "type": "string",
+      "default": "launcher_experiment",
+      "description": "FedVLR 输出文件名中的 comment 字段。"
+    },
+    "enabled_attacks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "maxItems": 2,
+      "description": "启用的攻击模块列表。执行顺序等于列表顺序。"
+    },
+    "enabled_defenses": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "maxItems": 2,
+      "description": "启用的防御模块列表。执行顺序等于列表顺序。"
+    },
+    "enabled_privacy_metrics": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "maxItems": 3,
+      "description": "启用的隐私观测 / 评估模块列表。"
+    },
+    "malicious_client_config": {
+      "type": "object",
+      "description": "恶意客户端占位配置。未启用攻击时可保持 enabled=false。",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "mode": { "type": "string", "enum": ["none", "ratio", "fixed"], "default": "none" },
+        "ratio": { "type": "number", "default": 0.0 },
+        "client_ids": {
+          "type": "array",
+          "items": { "type": ["string", "integer"] },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "training_params": {
+      "type": "object",
+      "description": "训练参数。launcher 会先填入安全默认值，再合并模型推荐覆盖项与该对象。",
+      "properties": {
+        "epochs": { "type": "integer", "default": 1 },
+        "local_epochs": { "type": "integer", "default": 1 },
+        "clients_sample_ratio": { "type": "number", "default": 1.0 },
+        "eval_step": { "type": "integer", "default": 1 },
+        "seed": { "type": "integer", "default": 42 },
+        "use_gpu": { "type": "boolean", "default": false },
+        "hyper_parameters": { "type": "array", "default": [] },
+        "collect_round_metrics": { "type": "boolean", "default": true },
+        "lr": { "type": "number" },
+        "l2_reg": { "type": "number" },
+        "alpha": { "type": "number" },
+        "beta": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "attack_params": {
+      "type": "object",
+      "description": "按模块名分组的攻击参数，例如 {\"model_replacement\": {\"replacement_scale\": 5.0}}。",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "defense_params": {
+      "type": "object",
+      "description": "按模块名分组的防御参数，例如 {\"trimmed_mean\": {\"trim_ratio\": 0.2}}。",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "privacy_params": {
+      "type": "object",
+      "description": "按模块名分组的观测模块参数。",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "extra_config": {
+      "type": "object",
+      "description": "保留给 FedVLR Config 的额外透传字段。谨慎使用。",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "multi_module_policy": {
+    "execution_order": "enabled_attacks -> enabled_defenses -> enabled_privacy_metrics",
+    "max_enabled_attacks": 2,
+    "max_enabled_defenses": 2,
+    "max_enabled_privacy_metrics": 3,
+    "recommended_open_combinations": [
+      {
+        "scenario": "baseline",
+        "enabled_attacks": [],
+        "enabled_defenses": [],
+        "enabled_privacy_metrics": []
+      },
+      {
+        "scenario": "attack_only",
+        "enabled_attacks": ["model_replacement"],
+        "enabled_defenses": [],
+        "enabled_privacy_metrics": []
+      },
+      {
+        "scenario": "attack_and_defense",
+        "enabled_attacks": ["model_replacement"],
+        "enabled_defenses": ["trimmed_mean"],
+        "enabled_privacy_metrics": []
+      }
+    ],
+    "unverified_examples": [
+      {
+        "enabled_attacks": ["model_replacement", "sign_flip"],
+        "enabled_defenses": []
+      },
+      {
+        "enabled_attacks": ["model_replacement"],
+        "enabled_defenses": ["update_filter", "trimmed_mean"]
+      }
+    ]
+  }
+}

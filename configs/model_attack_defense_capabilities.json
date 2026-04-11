@@ -1,0 +1,396 @@
+{
+  "version": "0.1.0",
+  "updated_at": "2026-04-12",
+  "max_enabled_attacks": 2,
+  "max_enabled_defenses": 2,
+  "max_enabled_privacy_metrics": 3,
+  "execution_order": [
+    "attack_chain",
+    "defense_chain",
+    "privacy_metrics"
+  ],
+  "models": [
+    {
+      "name": "FedAvg",
+      "family": "single_modal",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.00001
+      },
+      "notes": "已通过 baseline、model_replacement、model_replacement + trimmed_mean 三组兼容验证。"
+    },
+    {
+      "name": "FedNCF",
+      "family": "single_modal",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.00001
+      },
+      "notes": "默认 lr/l2_reg 建议由 launcher 显式标量化。"
+    },
+    {
+      "name": "FedRAP",
+      "family": "single_modal",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["client_update_scale", "sign_flip", "model_replacement"],
+      "validated_defenses": ["norm_clip", "update_filter", "trimmed_mean"],
+      "validated_privacy_metrics": ["client_update_norm", "client_preference_leakage_probe"],
+      "compatibility_status": "showcase_ready",
+      "recommended_training_overrides": {
+        "lr": 0.1,
+        "l2_reg": 0.0000001,
+        "alpha": 0.1,
+        "beta": 0.1
+      },
+      "notes": "当前单模态主展示模型。"
+    },
+    {
+      "name": "FedVBPR",
+      "family": "single_modal_with_visual_features",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "reg_weight": 0.0001,
+        "l2_reg": 0.00001
+      },
+      "notes": "依赖 KU 多模态特征文件，已通过模型族兼容验证。"
+    },
+    {
+      "name": "PFedRec",
+      "family": "single_modal_personalized",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.00001
+      },
+      "notes": "用户常写作 pFedRec；工程实际类名为 PFedRec。"
+    },
+    {
+      "name": "MMFedAvg",
+      "family": "multi_modal",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.00001
+      },
+      "notes": "已通过模型族强攻防兼容验证。"
+    },
+    {
+      "name": "MMFedNCF",
+      "family": "multi_modal",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.00001
+      },
+      "notes": "已通过模型族强攻防兼容验证。"
+    },
+    {
+      "name": "MMFedRAP",
+      "family": "multi_modal",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": ["client_update_norm", "client_preference_leakage_probe"],
+      "compatibility_status": "showcase_ready",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.0001,
+        "alpha": 0.0001,
+        "beta": 0.01
+      },
+      "notes": "当前多模态主展示模型。"
+    },
+    {
+      "name": "MMPFedRec",
+      "family": "multi_modal_personalized",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": true,
+      "supports_multi_defense": true,
+      "validated_attacks": ["model_replacement"],
+      "validated_defenses": ["trimmed_mean"],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "validated",
+      "recommended_training_overrides": {
+        "lr": 0.001,
+        "l2_reg": 0.00001
+      },
+      "notes": "已通过模型族强攻防兼容验证。"
+    },
+    {
+      "name": "MMGCN",
+      "family": "multi_modal_graph",
+      "recommended_dataset": "KU",
+      "supported_datasets": ["KU"],
+      "supports_multi_attack": false,
+      "supports_multi_defense": false,
+      "validated_attacks": [],
+      "validated_defenses": [],
+      "validated_privacy_metrics": [],
+      "compatibility_status": "blocked",
+      "recommended_training_overrides": {
+        "learning_rate": 0.001,
+        "reg_weight": 0.0001
+      },
+      "notes": "当前环境缺少 torch_geometric，且需进一步确认 MMGCNTrainer 与 FederatedTrainer hook 链路。"
+    }
+  ],
+  "attacks": [
+    {
+      "name": "client_update_scale",
+      "type": "active_attack",
+      "config_schema": {
+        "attack_scale": "float"
+      },
+      "default_values": {
+        "attack_scale": 2.0
+      },
+      "recommended_models": ["FedRAP"],
+      "validated_models": ["FedRAP"],
+      "notes": "只对 malicious_clients 缩放上传更新，适合作为最小主动攻击。"
+    },
+    {
+      "name": "sign_flip",
+      "type": "active_attack",
+      "config_schema": {
+        "sign_flip_scale": "float"
+      },
+      "default_values": {
+        "sign_flip_scale": 1.0
+      },
+      "recommended_models": ["FedRAP"],
+      "validated_models": ["FedRAP"],
+      "notes": "对 malicious_clients 执行符号翻转，可作为经典联邦更新攻击示例。"
+    },
+    {
+      "name": "model_replacement",
+      "type": "active_attack",
+      "config_schema": {
+        "replacement_scale": "float",
+        "replacement_rule": "string"
+      },
+      "default_values": {
+        "replacement_scale": 5.0,
+        "replacement_rule": "aligned_mean"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": ["FedAvg", "FedNCF", "FedRAP", "FedVBPR", "PFedRec", "MMFedAvg", "MMFedNCF", "MMFedRAP", "MMPFedRec"],
+      "notes": "minimal replacement-like 攻击，是当前强攻防主线的推荐攻击模块。"
+    },
+    {
+      "name": "client_preference_leakage_probe",
+      "type": "read_only_attack_like_probe",
+      "config_schema": {
+        "attack_probe_topk_ratio": "float",
+        "attack_probe_std_factor": "float"
+      },
+      "default_values": {
+        "attack_probe_topk_ratio": 0.1,
+        "attack_probe_std_factor": 1.5
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": ["FedRAP", "MMFedRAP"],
+      "notes": "FSHA-inspired 只读隐私泄露风险探针，不修改 participant_params。"
+    }
+  ],
+  "defenses": [
+    {
+      "name": "client_update_anomaly",
+      "type": "read_only_detector",
+      "config_schema": {
+        "defense_anomaly_std_factor": "float"
+      },
+      "default_values": {
+        "defense_anomaly_std_factor": 2.0
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": ["FedRAP"],
+      "notes": "只读异常检测，适合作为辅助观测。"
+    },
+    {
+      "name": "norm_clip",
+      "type": "active_pre_aggregation_defense",
+      "config_schema": {
+        "defense_clip_norm": "float"
+      },
+      "default_values": {
+        "defense_clip_norm": 5.0
+      },
+      "recommended_models": ["FedRAP"],
+      "validated_models": ["FedRAP"],
+      "notes": "聚合前范数裁剪，阈值需结合当前更新范数调优。"
+    },
+    {
+      "name": "update_filter",
+      "type": "active_pre_aggregation_defense",
+      "config_schema": {
+        "filter_rule": "string",
+        "filter_std_factor": "float",
+        "max_filtered_ratio": "float"
+      },
+      "default_values": {
+        "filter_rule": "update_norm > mean + filter_std_factor * std",
+        "filter_std_factor": 2.0,
+        "max_filtered_ratio": 0.5
+      },
+      "recommended_models": ["FedRAP"],
+      "validated_models": ["FedRAP"],
+      "notes": "聚合前过滤可疑更新，带有避免过滤全部客户端的保护。"
+    },
+    {
+      "name": "trimmed_mean",
+      "type": "minimal_robust_aggregation_defense",
+      "config_schema": {
+        "trim_ratio": "float",
+        "min_clients_for_trim": "integer",
+        "trim_rule": "string"
+      },
+      "default_values": {
+        "trim_ratio": 0.2,
+        "min_clients_for_trim": 5,
+        "trim_rule": "coordinate_trimmed_mean"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": ["FedAvg", "FedNCF", "FedRAP", "FedVBPR", "PFedRec", "MMFedAvg", "MMFedNCF", "MMFedRAP", "MMPFedRec"],
+      "notes": "当前强攻防主线推荐防御模块。"
+    }
+  ],
+  "privacy_metrics": [
+    {
+      "name": "client_update_norm",
+      "type": "read_only_metric",
+      "config_schema": {},
+      "default_values": {},
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": ["FedRAP", "MMFedRAP"],
+      "notes": "统计每轮客户端更新范数，不修改训练行为。"
+    }
+  ],
+  "validated_combinations": [
+    {
+      "name": "baseline",
+      "scenario": "baseline",
+      "attacks": [],
+      "defenses": [],
+      "privacy_metrics": [],
+      "validated_models": ["FedAvg", "FedNCF", "FedRAP", "FedVBPR", "PFedRec", "MMFedAvg", "MMFedNCF", "MMFedRAP", "MMPFedRec"],
+      "status": "validated"
+    },
+    {
+      "name": "model_replacement",
+      "scenario": "attack_only",
+      "attacks": ["model_replacement"],
+      "defenses": [],
+      "privacy_metrics": [],
+      "validated_models": ["FedAvg", "FedNCF", "FedRAP", "FedVBPR", "PFedRec", "MMFedAvg", "MMFedNCF", "MMFedRAP", "MMPFedRec"],
+      "status": "validated"
+    },
+    {
+      "name": "model_replacement_trimmed_mean",
+      "scenario": "attack_and_defense",
+      "attacks": ["model_replacement"],
+      "defenses": ["trimmed_mean"],
+      "privacy_metrics": [],
+      "validated_models": ["FedAvg", "FedNCF", "FedRAP", "FedVBPR", "PFedRec", "MMFedAvg", "MMFedNCF", "MMFedRAP", "MMPFedRec"],
+      "status": "validated"
+    },
+    {
+      "name": "scale_norm_clip",
+      "scenario": "attack_and_defense",
+      "attacks": ["client_update_scale"],
+      "defenses": ["norm_clip"],
+      "privacy_metrics": [],
+      "validated_models": ["FedRAP"],
+      "status": "validated"
+    },
+    {
+      "name": "sign_flip_update_filter",
+      "scenario": "attack_and_defense",
+      "attacks": ["sign_flip"],
+      "defenses": ["update_filter"],
+      "privacy_metrics": [],
+      "validated_models": ["FedRAP"],
+      "status": "validated"
+    }
+  ],
+  "recommended_showcase_combinations": [
+    "model_replacement",
+    "model_replacement_trimmed_mean",
+    "scale_norm_clip"
+  ],
+  "not_recommended_for_open_selection": [
+    {
+      "reason": "多攻击叠加尚未系统验证",
+      "example": {
+        "attacks": ["model_replacement", "sign_flip"],
+        "defenses": []
+      }
+    },
+    {
+      "reason": "多主动防御叠加尚未系统验证",
+      "example": {
+        "attacks": ["model_replacement"],
+        "defenses": ["update_filter", "trimmed_mean"]
+      }
+    },
+    {
+      "reason": "MMGCN 当前依赖和 trainer 链路仍阻塞",
+      "example": {
+        "model": "MMGCN",
+        "attacks": ["model_replacement"],
+        "defenses": ["trimmed_mean"]
+      }
+    }
+  ]
+}
