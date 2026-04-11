@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-04-11T21:05:50",
+  "model": "FedRAP",
+  "dataset": "KU",
+  "type": "ShowcaseV1",
+  "comment_prefix": "showcase_v1",
+  "output_dir": "outputs/results/FedRAP/KU/ShowcaseV1",
+  "records": [
+    {
+      "scenario": "baseline",
+      "experiment_mode": "baseline",
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.12254901960784313,
+      "ndcg20": 0.03645294117647059,
+      "loss": 0.5771846775622929,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "clipped_client_count": 0,
+      "filtered_client_count": 0,
+      "summary_path": "outputs/results/FedRAP/KU/ShowcaseV1/[FedRAP]-[KU]-[ShowcaseV1.showcase_v1.baseline].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/ShowcaseV1/[FedRAP]-[KU]-[ShowcaseV1.showcase_v1.baseline].experiment_result.json",
+      "display_note": "正常基线：无攻击、无主动防御，用于提供推荐性能参照。"
+    },
+    {
+      "scenario": "attack_only_sign_flip",
+      "experiment_mode": "attack_only",
+      "active_attacks": [
+        "sign_flip"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.09803921568627451,
+      "ndcg20": 0.03164166666666667,
+      "loss": 0.6276344382295421,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "clipped_client_count": 0,
+      "filtered_client_count": 0,
+      "summary_path": "outputs/results/FedRAP/KU/ShowcaseV1/[FedRAP]-[KU]-[ShowcaseV1.showcase_v1.attack_only_sign_flip].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/ShowcaseV1/[FedRAP]-[KU]-[ShowcaseV1.showcase_v1.attack_only_sign_flip].experiment_result.json",
+      "display_note": "攻击场景：恶意客户端执行符号翻转，观察推荐性能退化。"
+    },
+    {
+      "scenario": "attack_and_defense_clip",
+      "experiment_mode": "attack_and_defense",
+      "active_attacks": [
+        "client_update_scale"
+      ],
+      "active_defenses": [
+        "norm_clip"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.11764705882352941,
+      "ndcg20": 0.033791176470588234,
+      "loss": 0.5626455558573499,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "clipped_client_count": 41,
+      "filtered_client_count": 0,
+      "summary_path": "outputs/results/FedRAP/KU/ShowcaseV1/[FedRAP]-[KU]-[ShowcaseV1.showcase_v1.attack_and_defense_clip].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/ShowcaseV1/[FedRAP]-[KU]-[ShowcaseV1.showcase_v1.attack_and_defense_clip].experiment_result.json",
+      "display_note": "攻防场景：攻击后启用范数裁剪，对异常更新进行约束。"
+    }
+  ]
+}
