@@ -401,17 +401,36 @@ defense_clip_norm: 5.0
 
 ## 12. 后续增强实验矩阵（规划，不代表已实现）
 
-以下内容属于下一阶段规划，当前尚未实现：
+以下内容包含当前新增可用的更强攻击模块，以及仍处于规划阶段的后续增强项：
 
-### 12.1 `AdaptiveClipDefense`
+### 12.1 `ModelReplacementAttack`
 
+- 目标：在现有 `ClientUpdateScaleAttack` 和 `SignFlipAttack` 之外，提供一个更强的 model-replacement-like 主动攻击场景
+- 建议启用方式：
+  - `enabled_attacks: ["model_replacement"]`
+  - `enable_malicious_clients: true`
+  - `malicious_client_mode: "ratio"`
+  - `malicious_client_ratio: 0.2`
+  - `replacement_scale: 5.0`
+  - `replacement_rule: "aligned_mean"`
+- 预期场景：
+  - `attack_only`
+  - `attack_and_defense`
+- 展示重点：
+  - 与普通 scale attack 相比，它会尝试把恶意客户端更新对齐到共享方向后再放大
+  - 当前只是最小工程版 replacement-like 攻击，不代表论文级 model replacement / backdoor 复现
+
+### 12.2 `AdaptiveClipDefense`
+
+- 状态：规划项，当前尚未实现
 - 目标：在固定阈值裁剪基础上加入更自适应的裁剪策略
 - 预期场景：
   - `defense_only`
   - `attack_and_defense`
 
-### 12.2 `MMFedRAP` 兼容实验
+### 12.3 `MMFedRAP` 兼容实验
 
+- 状态：规划项，当前尚未完成标准化验证
 - 目标：将当前标准实验矩阵迁移到多模态主线
 - 预期价值：
   - 更贴合项目“多模态推荐安全实验平台”的最终方向
@@ -422,6 +441,7 @@ defense_clip_norm: 5.0
 
 - 标准实验所需的最小模块链路已经具备
 - `SignFlipAttack` 已可作为第二个主动攻击模块接入现有标准实验场景
+- `ModelReplacementAttack` 已可作为更强的 model-replacement-like 主动攻击模块接入现有实验场景
 - `UpdateFilterDefense` 已可作为第二个主动防御模块接入现有标准实验场景
 - 结果结构已支持场景标签表达
 - 详细版 / 摘要版结果均可自动写盘

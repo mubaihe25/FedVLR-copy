@@ -141,7 +141,33 @@
   - 与 `ClientUpdateScaleAttack` 保持同一接入风格，便于统一实验编排
   - 能更直接体现“恶意更新方向反转”对聚合输入的影响
 
-### 6.4 `NoOpAttack`
+### 6.4 `ModelReplacementAttack`
+
+- 模块类型：更强的主动攻击模块，属于 model-replacement-like 最小工程版
+- 代码位置：`FedVLR/attacks/model_replacement_attack.py`
+- 插入位置：`before_aggregation`
+- 是否只读：否
+- 是否修改 `participant_params`：是
+- 作用对象：本轮 `malicious_clients` 对应的客户端更新
+- 当前作用机制：
+  - 读取 `round_state["malicious_clients"]`
+  - 默认使用 `replacement_rule: aligned_mean`
+  - 先从本轮恶意客户端上传更新中构造共享方向 / 原型更新
+  - 再对每个恶意客户端上传执行 `replacement_scale * shared_direction`
+  - 若上传结构无法安全求平均，则安全回退为对原始恶意更新做比例放大
+  - 记录 `replacement_scale`、`replacement_rule`、`touched_update_count`、攻击前后范数摘要等字段
+- 与 `ClientUpdateScaleAttack` 的区别：
+  - `ClientUpdateScaleAttack` 是逐个客户端独立放大原始更新
+  - `ModelReplacementAttack` 会尝试把恶意客户端更新对齐到共享方向后再放大，更接近“协同主导聚合方向”的 replacement-like 思路
+- 与论文级 model replacement 的边界：
+  - 当前不访问全局模型参数
+  - 当前不做后门触发器、目标 item 操控或额外攻击训练器
+  - 当前只是适配 FedVLR 现有聚合前 hook 的最小工程版本
+- 当前实验价值：
+  - 作为比 scale / sign flip 更高阶的主动攻击模块
+  - 适合后续构造更强攻击场景，并与 `NormClipDefense` / `UpdateFilterDefense` 做对照
+
+### 6.5 `NoOpAttack`
 
 - 模块类型：占位攻击模块
 - 代码位置：`FedVLR/attacks/noop_attack.py`
@@ -406,6 +432,7 @@
 - `ClientPreferenceLeakageProbe`
 - `ClientUpdateScaleAttack`
 - `SignFlipAttack`
+- `ModelReplacementAttack`
 - `NormClipDefense`
 - `UpdateFilterDefense`
 - 详细版 / 摘要版结果结构与自动写盘
