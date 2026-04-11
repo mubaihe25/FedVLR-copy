@@ -1,0 +1,913 @@
+{
+  "generated_at": "2026-04-11T23:36:47",
+  "dataset": "KU",
+  "type": "ModelFamilyStrongAdvCompat",
+  "comment_prefix": "model_family_strong_adv_compat",
+  "models": [
+    "FedAvg",
+    "FedNCF",
+    "FedRAP",
+    "FedVBPR",
+    "PFedRec",
+    "MMFedAvg",
+    "MMFedNCF",
+    "MMFedRAP",
+    "MMPFedRec",
+    "MMGCN"
+  ],
+  "scenarios": [
+    "baseline",
+    "attack_only_model_replacement",
+    "attack_and_defense_trimmed_mean"
+  ],
+  "model_risk_points": {
+    "FedAvg": [
+      "单模态 FederatedTrainer 路径；默认 lr/l2_reg 为列表，需要脚本显式标量化。",
+      "上传更新通常是模型参数字典，现有递归 hook 可处理。"
+    ],
+    "FedNCF": [
+      "单模态 FederatedTrainer 路径；默认 lr/l2_reg 为列表，需要脚本显式标量化。",
+      "上传更新通常是嵌套参数字典，需确认 model_replacement/trimmed_mean 不破坏聚合输入。"
+    ],
+    "FedRAP": [
+      "已完成正式展示主线；本批次用于横向基准复核。",
+      "上传更新主要包含 item_commonality.weight，结构最接近已验证路径。"
+    ],
+    "FedVBPR": [
+      "标记为多模态联邦模型，依赖 KU 的 image/text 特征文件。",
+      "默认 lr/reg_weight 为列表，需要脚本显式标量化。"
+    ],
+    "PFedRec": [
+      "用户称 pFedRec，工程实际类名为 PFedRec。",
+      "默认 lr/l2_reg 为列表，需要脚本显式标量化。"
+    ],
+    "MMFedAvg": [
+      "多模态 FederatedTrainer 路径，依赖 fusion 层与 item_commonality 上传更新。",
+      "默认 lr/l2_reg 为列表，需要脚本显式标量化。"
+    ],
+    "MMFedNCF": [
+      "多模态 FederatedTrainer 路径，依赖 fusion 层与 item_commonality 上传更新。",
+      "默认 lr/l2_reg 为列表，需要脚本显式标量化。"
+    ],
+    "MMFedRAP": [
+      "已完成 MMFedRAP 正式展示验证；本批次用于横向复核。",
+      "上传更新包含 fusion.* 梯度和 item_commonality.weight。"
+    ],
+    "MMPFedRec": [
+      "多模态个性化联邦模型，依赖 fusion 层与个性化参数存储。",
+      "默认 lr/l2_reg 为列表，需要脚本显式标量化。"
+    ],
+    "MMGCN": [
+      "工程中存在 MMGCN 模型类，但没有 MMGCNTrainer。",
+      "当前不在 FederatedTrainer hook 链路中，不适合强行验证 model_replacement + trimmed_mean。"
+    ]
+  },
+  "records": [
+    {
+      "model": "FedAvg",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.013787745098039216,
+      "loss": 0.6905705537281784,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedAvg/KU/ModelFamilyStrongAdvCompat/[FedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedAvg.baseline].experiment_summary.json",
+      "result_path": "outputs/results/FedAvg/KU/ModelFamilyStrongAdvCompat/[FedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedAvg.baseline].experiment_result.json",
+      "compatibility_note": "FedAvg / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedAvg",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.013787745098039216,
+      "loss": 0.6905705537281784,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedAvg/KU/ModelFamilyStrongAdvCompat/[FedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedAvg.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/FedAvg/KU/ModelFamilyStrongAdvCompat/[FedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedAvg.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "FedAvg / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedAvg",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.013787745098039216,
+      "loss": 0.6905705537281784,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/FedAvg/KU/ModelFamilyStrongAdvCompat/[FedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedAvg.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/FedAvg/KU/ModelFamilyStrongAdvCompat/[FedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedAvg.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "FedAvg / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedNCF",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.07352941176470588,
+      "ndcg20": 0.025436764705882357,
+      "loss": 0.6932732956666573,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedNCF/KU/ModelFamilyStrongAdvCompat/[FedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedNCF.baseline].experiment_summary.json",
+      "result_path": "outputs/results/FedNCF/KU/ModelFamilyStrongAdvCompat/[FedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedNCF.baseline].experiment_result.json",
+      "compatibility_note": "FedNCF / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedNCF",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.07352941176470588,
+      "ndcg20": 0.025436764705882357,
+      "loss": 0.6932732956666573,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedNCF/KU/ModelFamilyStrongAdvCompat/[FedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedNCF.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/FedNCF/KU/ModelFamilyStrongAdvCompat/[FedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedNCF.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "FedNCF / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedNCF",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.07352941176470588,
+      "ndcg20": 0.025436764705882357,
+      "loss": 0.6932732956666573,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/FedNCF/KU/ModelFamilyStrongAdvCompat/[FedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedNCF.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/FedNCF/KU/ModelFamilyStrongAdvCompat/[FedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedNCF.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "FedNCF / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedRAP",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.12254901960784313,
+      "ndcg20": 0.03759117647058824,
+      "loss": 0.6940405926868027,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedRAP/KU/ModelFamilyStrongAdvCompat/[FedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedRAP.baseline].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/ModelFamilyStrongAdvCompat/[FedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedRAP.baseline].experiment_result.json",
+      "compatibility_note": "FedRAP / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedRAP",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.06862745098039216,
+      "ndcg20": 0.023379901960784318,
+      "loss": 0.6940405926868027,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedRAP/KU/ModelFamilyStrongAdvCompat/[FedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedRAP.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/ModelFamilyStrongAdvCompat/[FedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedRAP.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "FedRAP / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedRAP",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.19117647058823528,
+      "ndcg20": 0.05635686274509803,
+      "loss": 0.6940405926868027,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/FedRAP/KU/ModelFamilyStrongAdvCompat/[FedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedRAP.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/ModelFamilyStrongAdvCompat/[FedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedRAP.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "FedRAP / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedVBPR",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.029411764705882353,
+      "ndcg20": 0.008359803921568626,
+      "loss": 0.6950138354418325,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedVBPR/KU/ModelFamilyStrongAdvCompat/[FedVBPR]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedVBPR.baseline].experiment_summary.json",
+      "result_path": "outputs/results/FedVBPR/KU/ModelFamilyStrongAdvCompat/[FedVBPR]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedVBPR.baseline].experiment_result.json",
+      "compatibility_note": "FedVBPR / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedVBPR",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.029411764705882353,
+      "ndcg20": 0.008213725490196078,
+      "loss": 0.6950138354418325,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/FedVBPR/KU/ModelFamilyStrongAdvCompat/[FedVBPR]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedVBPR.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/FedVBPR/KU/ModelFamilyStrongAdvCompat/[FedVBPR]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedVBPR.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "FedVBPR / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "FedVBPR",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.029411764705882353,
+      "ndcg20": 0.008254411764705882,
+      "loss": 0.6950138354418325,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/FedVBPR/KU/ModelFamilyStrongAdvCompat/[FedVBPR]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedVBPR.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/FedVBPR/KU/ModelFamilyStrongAdvCompat/[FedVBPR]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.FedVBPR.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "FedVBPR / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "PFedRec",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.009919607843137255,
+      "loss": 0.6938254394951988,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/PFedRec/KU/ModelFamilyStrongAdvCompat/[PFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.PFedRec.baseline].experiment_summary.json",
+      "result_path": "outputs/results/PFedRec/KU/ModelFamilyStrongAdvCompat/[PFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.PFedRec.baseline].experiment_result.json",
+      "compatibility_note": "PFedRec / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "PFedRec",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.009919607843137255,
+      "loss": 0.6938254394951988,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/PFedRec/KU/ModelFamilyStrongAdvCompat/[PFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.PFedRec.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/PFedRec/KU/ModelFamilyStrongAdvCompat/[PFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.PFedRec.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "PFedRec / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "PFedRec",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.009919607843137255,
+      "loss": 0.6938254394951988,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/PFedRec/KU/ModelFamilyStrongAdvCompat/[PFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.PFedRec.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/PFedRec/KU/ModelFamilyStrongAdvCompat/[PFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.PFedRec.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "PFedRec / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedAvg",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.0196078431372549,
+      "ndcg20": 0.00916078431372549,
+      "loss": 0.7241289790938882,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedAvg/KU/ModelFamilyStrongAdvCompat/[MMFedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedAvg.baseline].experiment_summary.json",
+      "result_path": "outputs/results/MMFedAvg/KU/ModelFamilyStrongAdvCompat/[MMFedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedAvg.baseline].experiment_result.json",
+      "compatibility_note": "MMFedAvg / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedAvg",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.0196078431372549,
+      "ndcg20": 0.00912843137254902,
+      "loss": 0.7241289790938882,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedAvg/KU/ModelFamilyStrongAdvCompat/[MMFedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedAvg.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/MMFedAvg/KU/ModelFamilyStrongAdvCompat/[MMFedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedAvg.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "MMFedAvg / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedAvg",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.0196078431372549,
+      "ndcg20": 0.009106862745098039,
+      "loss": 0.7241289790938882,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/MMFedAvg/KU/ModelFamilyStrongAdvCompat/[MMFedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedAvg.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/MMFedAvg/KU/ModelFamilyStrongAdvCompat/[MMFedAvg]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedAvg.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "MMFedAvg / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedNCF",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.006763725490196079,
+      "loss": 0.6928194463253021,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedNCF/KU/ModelFamilyStrongAdvCompat/[MMFedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedNCF.baseline].experiment_summary.json",
+      "result_path": "outputs/results/MMFedNCF/KU/ModelFamilyStrongAdvCompat/[MMFedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedNCF.baseline].experiment_result.json",
+      "compatibility_note": "MMFedNCF / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedNCF",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.007000000000000001,
+      "loss": 0.6928194463253021,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedNCF/KU/ModelFamilyStrongAdvCompat/[MMFedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedNCF.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/MMFedNCF/KU/ModelFamilyStrongAdvCompat/[MMFedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedNCF.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "MMFedNCF / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedNCF",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.006875490196078432,
+      "loss": 0.6928194463253021,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/MMFedNCF/KU/ModelFamilyStrongAdvCompat/[MMFedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedNCF.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/MMFedNCF/KU/ModelFamilyStrongAdvCompat/[MMFedNCF]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedNCF.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "MMFedNCF / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedRAP",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.049019607843137254,
+      "ndcg20": 0.02830392156862745,
+      "loss": 0.6936181719396629,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedRAP/KU/ModelFamilyStrongAdvCompat/[MMFedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedRAP.baseline].experiment_summary.json",
+      "result_path": "outputs/results/MMFedRAP/KU/ModelFamilyStrongAdvCompat/[MMFedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedRAP.baseline].experiment_result.json",
+      "compatibility_note": "MMFedRAP / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedRAP",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.0392156862745098,
+      "ndcg20": 0.020590686274509804,
+      "loss": 0.6936181719396629,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedRAP/KU/ModelFamilyStrongAdvCompat/[MMFedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedRAP.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/MMFedRAP/KU/ModelFamilyStrongAdvCompat/[MMFedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedRAP.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "MMFedRAP / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMFedRAP",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.049019607843137254,
+      "ndcg20": 0.027879901960784315,
+      "loss": 0.6936181719396629,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/MMFedRAP/KU/ModelFamilyStrongAdvCompat/[MMFedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedRAP.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/MMFedRAP/KU/ModelFamilyStrongAdvCompat/[MMFedRAP]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMFedRAP.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "MMFedRAP / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMPFedRec",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.024509803921568627,
+      "ndcg20": 0.011243627450980393,
+      "loss": 0.6931481723691902,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMPFedRec/KU/ModelFamilyStrongAdvCompat/[MMPFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMPFedRec.baseline].experiment_summary.json",
+      "result_path": "outputs/results/MMPFedRec/KU/ModelFamilyStrongAdvCompat/[MMPFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMPFedRec.baseline].experiment_result.json",
+      "compatibility_note": "MMPFedRec / baseline 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMPFedRec",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.0196078431372549,
+      "ndcg20": 0.010083823529411765,
+      "loss": 0.6931481723691902,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMPFedRec/KU/ModelFamilyStrongAdvCompat/[MMPFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMPFedRec.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/MMPFedRec/KU/ModelFamilyStrongAdvCompat/[MMPFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMPFedRec.attack_only_model_replacement].experiment_result.json",
+      "compatibility_note": "MMPFedRec / attack_only_model_replacement 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMPFedRec",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": true,
+      "failed": false,
+      "failure_stage": null,
+      "failure_reason": null,
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.0196078431372549,
+      "ndcg20": 0.009669607843137255,
+      "loss": 0.6931481723691902,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/MMPFedRec/KU/ModelFamilyStrongAdvCompat/[MMPFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMPFedRec.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/MMPFedRec/KU/ModelFamilyStrongAdvCompat/[MMPFedRec]-[KU]-[ModelFamilyStrongAdvCompat.model_family_strong_adv_compat.MMPFedRec.attack_and_defense_trimmed_mean].experiment_result.json",
+      "compatibility_note": "MMPFedRec / attack_and_defense_trimmed_mean 已跑通，hook 指标和结果文件已生成。"
+    },
+    {
+      "model": "MMGCN",
+      "scenario": "baseline",
+      "dataset": "KU",
+      "success": false,
+      "failed": true,
+      "failure_stage": "precheck",
+      "failure_reason": "trainer_import_failed:missing_dependency:torch_geometric",
+      "experiment_mode": null,
+      "scenario_tags": [],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": null,
+      "ndcg20": null,
+      "loss": null,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": null,
+      "result_path": null,
+      "compatibility_note": "MMGCN / baseline 未跑通：trainer_import_failed:missing_dependency:torch_geometric。"
+    },
+    {
+      "model": "MMGCN",
+      "scenario": "attack_only_model_replacement",
+      "dataset": "KU",
+      "success": false,
+      "failed": true,
+      "failure_stage": "precheck",
+      "failure_reason": "trainer_import_failed:missing_dependency:torch_geometric",
+      "experiment_mode": null,
+      "scenario_tags": [],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": null,
+      "ndcg20": null,
+      "loss": null,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": null,
+      "result_path": null,
+      "compatibility_note": "MMGCN / attack_only_model_replacement 未跑通：trainer_import_failed:missing_dependency:torch_geometric。"
+    },
+    {
+      "model": "MMGCN",
+      "scenario": "attack_and_defense_trimmed_mean",
+      "dataset": "KU",
+      "success": false,
+      "failed": true,
+      "failure_stage": "precheck",
+      "failure_reason": "trainer_import_failed:missing_dependency:torch_geometric",
+      "experiment_mode": null,
+      "scenario_tags": [],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": null,
+      "ndcg20": null,
+      "loss": null,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "effective_trim_count": 0,
+      "summary_path": null,
+      "result_path": null,
+      "compatibility_note": "MMGCN / attack_and_defense_trimmed_mean 未跑通：trainer_import_failed:missing_dependency:torch_geometric。"
+    }
+  ]
+}
