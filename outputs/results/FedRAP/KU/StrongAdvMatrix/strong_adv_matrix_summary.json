@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-04-11T22:29:08",
+  "model": "FedRAP",
+  "dataset": "KU",
+  "type": "StrongAdvMatrix",
+  "comment_prefix": "strong_adv_matrix",
+  "records": [
+    {
+      "scenario": "baseline",
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.12254901960784313,
+      "ndcg20": 0.03645294117647059,
+      "loss": 0.5771846775622929,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "clipped_client_count": 0,
+      "filtered_client_count": 0,
+      "trimmed_mean_applied": false,
+      "trimmed_mean_applied_rounds": 0,
+      "trimmed_mean_effective_trim_count": 0,
+      "trimmed_mean_retained_client_count_equivalent": null,
+      "replacement_scale": null,
+      "replacement_rule": null,
+      "summary_path": "outputs/results/FedRAP/KU/StrongAdvMatrix/[FedRAP]-[KU]-[StrongAdvMatrix.strong_adv_matrix.baseline].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/StrongAdvMatrix/[FedRAP]-[KU]-[StrongAdvMatrix.strong_adv_matrix.baseline].experiment_result.json",
+      "display_note": "正常基线：无攻击、无主动防御，用于提供强攻防实验的推荐性能参照。"
+    },
+    {
+      "scenario": "attack_only_model_replacement",
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.10294117647058823,
+      "ndcg20": 0.030364705882352946,
+      "loss": 0.5091617794013491,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "clipped_client_count": 0,
+      "filtered_client_count": 0,
+      "trimmed_mean_applied": false,
+      "trimmed_mean_applied_rounds": 0,
+      "trimmed_mean_effective_trim_count": 0,
+      "trimmed_mean_retained_client_count_equivalent": null,
+      "replacement_scale": 5.0,
+      "replacement_rule": "aligned_mean",
+      "summary_path": "outputs/results/FedRAP/KU/StrongAdvMatrix/[FedRAP]-[KU]-[StrongAdvMatrix.strong_adv_matrix.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/StrongAdvMatrix/[FedRAP]-[KU]-[StrongAdvMatrix.strong_adv_matrix.attack_only_model_replacement].experiment_result.json",
+      "display_note": "强攻击组：恶意客户端执行 minimal model-replacement-like 更新，观察性能退化与攻击计数字段。"
+    },
+    {
+      "scenario": "attack_and_defense_trimmed_mean",
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.12254901960784313,
+      "ndcg20": 0.03746519607843137,
+      "loss": 0.6211596064123452,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "clipped_client_count": 0,
+      "filtered_client_count": 0,
+      "trimmed_mean_applied": true,
+      "trimmed_mean_applied_rounds": 3,
+      "trimmed_mean_effective_trim_count": 40,
+      "trimmed_mean_retained_client_count_equivalent": 124,
+      "replacement_scale": 5.0,
+      "replacement_rule": "aligned_mean",
+      "summary_path": "outputs/results/FedRAP/KU/StrongAdvMatrix/[FedRAP]-[KU]-[StrongAdvMatrix.strong_adv_matrix.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/FedRAP/KU/StrongAdvMatrix/[FedRAP]-[KU]-[StrongAdvMatrix.strong_adv_matrix.attack_and_defense_trimmed_mean].experiment_result.json",
+      "display_note": "强攻防组：在 model_replacement 攻击后启用 trimmed_mean，观察鲁棒聚合式防御对极端更新的约束。"
+    }
+  ]
+}
