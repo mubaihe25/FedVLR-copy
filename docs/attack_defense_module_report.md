@@ -233,7 +233,34 @@
   - 与 `ClientUpdateAnomalyDetector` 的区别在于它会真实过滤聚合输入
   - 与 `NormClipDefense` 形成“预处理裁剪 / 直接过滤”两种最小防御对照
 
-### 7.4 `NoOpDefense`
+### 7.4 `TrimmedMeanDefense`
+
+- 模块类型：trimmed-mean-like 鲁棒聚合防御模块
+- 代码位置：`FedVLR/defenses/trimmed_mean_defense.py`
+- 插入位置：`before_aggregation`
+- 是否只读：否
+- 是否修改 `participant_params`：是
+- 作用对象：本轮所有参与客户端上传更新
+- 当前作用机制：
+  - 不依赖 `malicious_clients` 标签
+  - 对支持的 tensor / numeric / 嵌套 dict 结构执行逐坐标截尾均值
+  - 通过 `trim_ratio` 计算两端截尾数量，通过 `min_clients_for_trim` 控制最少参与客户端数
+  - 保留原始客户端 key，将每个客户端上传替换为同一个 trimmed mean 原型副本
+  - 这样不改现有聚合器，但聚合输出在兼容结构上等价于 trimmed mean 原型
+  - 遇到客户端数不足、结构不兼容或比例不可用时安全回退为原始输入
+- 与已有防御的区别：
+  - `NormClipDefense` 保留全部客户端，只限制更新范数
+  - `UpdateFilterDefense` 基于异常分数过滤部分客户端
+  - `TrimmedMeanDefense` 更接近鲁棒聚合思想，通过逐坐标截尾降低极端更新影响
+- 与论文级 trimmed mean 聚合的边界：
+  - 当前不是完整聚合器框架
+  - 当前不改 `_aggregate_params`
+  - 当前以聚合前等效输入方式适配现有 FedVLR 训练链路
+- 当前实验价值：
+  - 作为更接近鲁棒聚合的主动防御模块
+  - 适合后续和 `SignFlipAttack` / `ModelReplacementAttack` 组成更强攻防对照
+
+### 7.5 `NoOpDefense`
 
 - 模块类型：占位防御模块
 - 代码位置：`FedVLR/defenses/noop_defense.py`

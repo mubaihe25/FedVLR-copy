@@ -428,7 +428,22 @@ defense_clip_norm: 5.0
   - `defense_only`
   - `attack_and_defense`
 
-### 12.3 `MMFedRAP` 兼容实验
+### 12.3 `TrimmedMeanDefense`
+
+- 目标：在 `NormClipDefense` 和 `UpdateFilterDefense` 之外，提供一个更接近鲁棒聚合的 trimmed-mean-like 防御场景
+- 建议启用方式：
+  - `enabled_defenses: ["trimmed_mean"]`
+  - `trim_ratio: 0.2`
+  - `min_clients_for_trim: 5`
+  - `trim_rule: "coordinate_trimmed_mean"`
+- 预期场景：
+  - `defense_only`
+  - `attack_and_defense`
+- 展示重点：
+  - 它不依赖恶意客户端标签，而是通过逐坐标截尾降低极端更新影响
+  - 当前是聚合前等效输入版本，不代表完整论文级 trimmed mean 聚合器框架
+
+### 12.4 `MMFedRAP` 兼容实验
 
 - 状态：规划项，当前尚未完成标准化验证
 - 目标：将当前标准实验矩阵迁移到多模态主线
@@ -443,6 +458,7 @@ defense_clip_norm: 5.0
 - `SignFlipAttack` 已可作为第二个主动攻击模块接入现有标准实验场景
 - `ModelReplacementAttack` 已可作为更强的 model-replacement-like 主动攻击模块接入现有实验场景
 - `UpdateFilterDefense` 已可作为第二个主动防御模块接入现有标准实验场景
+- `TrimmedMeanDefense` 已可作为 trimmed-mean-like 鲁棒聚合防御模块接入现有实验场景
 - 结果结构已支持场景标签表达
 - 详细版 / 摘要版结果均可自动写盘
 
