@@ -1,0 +1,86 @@
+{
+  "generated_at": "2026-04-11T23:10:10",
+  "model": "MMFedRAP",
+  "dataset": "KU",
+  "type": "MMFedRAPStrongAdvShowcase",
+  "comment_prefix": "mmfedrap_strong_adv_showcase",
+  "records": [
+    {
+      "scenario": "baseline",
+      "model": "MMFedRAP",
+      "dataset": "KU",
+      "experiment_mode": "baseline",
+      "scenario_tags": [
+        "baseline"
+      ],
+      "active_attacks": [],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.04411764705882353,
+      "ndcg20": 0.02663970588235294,
+      "loss": 0.691762109597524,
+      "malicious_client_count": 0,
+      "attacked_client_count": 0,
+      "trimmed_mean_applied": false,
+      "trimmed_mean_applied_rounds": 0,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedRAP/KU/MMFedRAPStrongAdvShowcase/[MMFedRAP]-[KU]-[MMFedRAPStrongAdvShowcase.mmfedrap_strong_adv_showcase.baseline].experiment_summary.json",
+      "result_path": "outputs/results/MMFedRAP/KU/MMFedRAPStrongAdvShowcase/[MMFedRAP]-[KU]-[MMFedRAPStrongAdvShowcase.mmfedrap_strong_adv_showcase.baseline].experiment_result.json",
+      "display_note": "MMFedRAP 正式基线：无攻击、无主动防御，用于提供多模态强攻防展示参照。"
+    },
+    {
+      "scenario": "attack_only_model_replacement",
+      "model": "MMFedRAP",
+      "dataset": "KU",
+      "experiment_mode": "attack_only",
+      "scenario_tags": [
+        "attack_only",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [],
+      "active_privacy_metrics": [],
+      "recall20": 0.0392156862745098,
+      "ndcg20": 0.020251960784313728,
+      "loss": 0.6914352485362221,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": false,
+      "trimmed_mean_applied_rounds": 0,
+      "effective_trim_count": 0,
+      "summary_path": "outputs/results/MMFedRAP/KU/MMFedRAPStrongAdvShowcase/[MMFedRAP]-[KU]-[MMFedRAPStrongAdvShowcase.mmfedrap_strong_adv_showcase.attack_only_model_replacement].experiment_summary.json",
+      "result_path": "outputs/results/MMFedRAP/KU/MMFedRAPStrongAdvShowcase/[MMFedRAP]-[KU]-[MMFedRAPStrongAdvShowcase.mmfedrap_strong_adv_showcase.attack_only_model_replacement].experiment_result.json",
+      "display_note": "MMFedRAP 强攻击组：恶意客户端执行 minimal model-replacement-like 更新，观察多模态推荐性能退化。"
+    },
+    {
+      "scenario": "attack_and_defense_trimmed_mean",
+      "model": "MMFedRAP",
+      "dataset": "KU",
+      "experiment_mode": "attack_and_defense",
+      "scenario_tags": [
+        "attack_and_defense",
+        "malicious_clients_configured"
+      ],
+      "active_attacks": [
+        "model_replacement"
+      ],
+      "active_defenses": [
+        "trimmed_mean"
+      ],
+      "active_privacy_metrics": [],
+      "recall20": 0.058823529411764705,
+      "ndcg20": 0.0241186274509804,
+      "loss": 0.6914797775885638,
+      "malicious_client_count": 41,
+      "attacked_client_count": 41,
+      "trimmed_mean_applied": true,
+      "trimmed_mean_applied_rounds": 5,
+      "effective_trim_count": 40,
+      "summary_path": "outputs/results/MMFedRAP/KU/MMFedRAPStrongAdvShowcase/[MMFedRAP]-[KU]-[MMFedRAPStrongAdvShowcase.mmfedrap_strong_adv_showcase.attack_and_defense_trimmed_mean].experiment_summary.json",
+      "result_path": "outputs/results/MMFedRAP/KU/MMFedRAPStrongAdvShowcase/[MMFedRAP]-[KU]-[MMFedRAPStrongAdvShowcase.mmfedrap_strong_adv_showcase.attack_and_defense_trimmed_mean].experiment_result.json",
+      "display_note": "MMFedRAP 强攻防组：在 model_replacement 攻击后启用 trimmed_mean，观察鲁棒聚合式防御的恢复效果。"
+    }
+  ]
+}
