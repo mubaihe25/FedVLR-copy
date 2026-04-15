@@ -99,6 +99,10 @@ class ExperimentHookManager:
                 "loaded_attacks": [attack.name for attack in self.attacks],
                 "loaded_defenses": [defense.name for defense in self.defenses],
                 "loaded_privacy_metrics": [metric.name for metric in self.privacy_metrics],
+                "attack_taxonomy": {
+                    attack.name: attack.semantic_metadata()
+                    for attack in self.attacks
+                },
                 "unknown_attacks": unknown_attacks,
                 "unknown_defenses": unknown_defenses,
                 "unknown_privacy_metrics": unknown_privacy_metrics,
@@ -186,6 +190,12 @@ class ExperimentHookManager:
     def _collect_attack_metrics(self) -> Dict[str, Any]:
         return {attack.name: attack.collect_metrics() for attack in self.attacks}
 
+    def _collect_attack_taxonomy(self) -> Dict[str, Any]:
+        return {
+            attack.name: attack.semantic_metadata()
+            for attack in self.attacks
+        }
+
     def _collect_defense_metrics(self) -> Dict[str, Any]:
         return {defense.name: defense.collect_metrics() for defense in self.defenses}
 
@@ -247,6 +257,7 @@ class ExperimentHookManager:
             "active_attacks": list(self.result.active_attacks),
             "active_defenses": list(self.result.active_defenses),
             "active_privacy_metrics": list(self.result.active_privacy_metrics),
+            "attack_taxonomy": self._collect_attack_taxonomy(),
             "experiment_mode": self.result.experiment_mode,
             "scenario_tags": list(self.result.scenario_tags),
             "malicious_clients": round_malicious_clients,
@@ -526,6 +537,7 @@ class ExperimentHookManager:
         self.result.metadata["active_privacy_metrics"] = list(
             self.result.active_privacy_metrics
         )
+        self.result.metadata["attack_taxonomy"] = self._collect_attack_taxonomy()
         self.result.metadata["experiment_mode"] = self.result.experiment_mode
         self.result.metadata["scenario_tags"] = list(self.result.scenario_tags)
         self.result.metadata["malicious_client_summary"] = (

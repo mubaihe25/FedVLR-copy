@@ -21,6 +21,13 @@ from attacks.registry import register_attack
 class SignFlipAttack(BaseAttack):
     """Flip malicious client uploads by multiplying them with a negative scale."""
 
+    attack_family = "poisoning"
+    attack_category = "poisoning"
+    attack_strategy = "sign_flip"
+    attack_display_category = "投毒攻击"
+    mutates_participant_params = True
+    is_read_only = False
+
     def __init__(
         self,
         name: str = "sign_flip",
@@ -117,6 +124,7 @@ class SignFlipAttack(BaseAttack):
 
         if not isinstance(participant_params, dict) or not malicious_clients:
             attack_result = {
+                **self.semantic_metadata(),
                 "attacked_clients": [],
                 "attacked_client_count": 0,
                 "sign_flip_scale": self.sign_flip_scale,
@@ -158,6 +166,7 @@ class SignFlipAttack(BaseAttack):
         before_values = list(attacked_client_norms_before.values())
         after_values = list(attacked_client_norms_after.values())
         attack_result = {
+            **self.semantic_metadata(),
             "attacked_clients": attacked_clients,
             "attacked_client_count": len(attacked_clients),
             "sign_flip_scale": self.sign_flip_scale,
@@ -187,6 +196,7 @@ class SignFlipAttack(BaseAttack):
     ) -> Dict[str, Any]:
         if not self.history:
             return {
+                **self.semantic_metadata(),
                 "num_rounds": 0,
                 "rounds_with_attacks": 0,
                 "total_attacked_clients": 0,
@@ -212,6 +222,7 @@ class SignFlipAttack(BaseAttack):
             if item.get("avg_attacked_norm_after") is not None
         ]
         return {
+            **self.semantic_metadata(),
             "num_rounds": len(self.history),
             "rounds_with_attacks": sum(1 for count in attacked_counts if count > 0),
             "total_attacked_clients": int(sum(attacked_counts)),

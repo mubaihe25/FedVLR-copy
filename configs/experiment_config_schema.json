@@ -35,7 +35,7 @@
       "items": { "type": "string" },
       "default": [],
       "maxItems": 2,
-      "description": "启用的攻击模块列表。执行顺序等于列表顺序。"
+      "description": "启用的攻击/攻击样式观测模块列表。投毒攻击包括 client_update_scale、sign_flip、model_replacement；client_preference_leakage_probe 是只读隐私泄露探针，不属于主动投毒。执行顺序等于列表顺序。"
     },
     "enabled_defenses": {
       "type": "array",

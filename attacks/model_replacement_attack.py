@@ -28,6 +28,13 @@ from attacks.registry import register_attack
 class ModelReplacementAttack(BaseAttack):
     """Apply a minimal replacement-like transform to malicious client uploads."""
 
+    attack_family = "poisoning"
+    attack_category = "poisoning"
+    attack_strategy = "model_replacement"
+    attack_display_category = "投毒攻击"
+    mutates_participant_params = True
+    is_read_only = False
+
     def __init__(
         self,
         name: str = "model_replacement",
@@ -196,6 +203,7 @@ class ModelReplacementAttack(BaseAttack):
 
     def _empty_result(self) -> Dict[str, Any]:
         return {
+            **self.semantic_metadata(),
             "attacked_clients": [],
             "attacked_client_count": 0,
             "replacement_scale": self.replacement_scale,
@@ -273,6 +281,7 @@ class ModelReplacementAttack(BaseAttack):
         before_values = list(attacked_client_norms_before.values())
         after_values = list(attacked_client_norms_after.values())
         attack_result = {
+            **self.semantic_metadata(),
             "attacked_clients": attacked_clients,
             "attacked_client_count": len(attacked_clients),
             "replacement_scale": self.replacement_scale,
@@ -303,6 +312,7 @@ class ModelReplacementAttack(BaseAttack):
     ) -> Dict[str, Any]:
         if not self.history:
             return {
+                **self.semantic_metadata(),
                 "num_rounds": 0,
                 "rounds_with_attacks": 0,
                 "total_attacked_clients": 0,
@@ -328,6 +338,7 @@ class ModelReplacementAttack(BaseAttack):
             if item.get("avg_attacked_norm_after") is not None
         ]
         return {
+            **self.semantic_metadata(),
             "num_rounds": len(self.history),
             "rounds_with_attacks": sum(1 for count in attacked_counts if count > 0),
             "total_attacked_clients": int(sum(attacked_counts)),

@@ -191,6 +191,12 @@
 
 当前建议在 `round_metrics.extra.attack_metrics` 中记录：
 
+- `attack_family`
+- `attack_category`
+- `attack_strategy`
+- `attack_display_category`
+- `mutates_participant_params`
+- `is_read_only`
 - `leakage_scores`
 - `high_risk_clients`
 - `high_risk_client_count`
@@ -219,6 +225,12 @@
 
 当前建议在 `round_metrics.extra.attack_metrics` 中记录：
 
+- `attack_family`
+- `attack_category`
+- `attack_strategy`
+- `attack_display_category`
+- `mutates_participant_params`
+- `is_read_only`
 - `attacked_clients`
 - `attacked_client_count`
 - `attack_scale`

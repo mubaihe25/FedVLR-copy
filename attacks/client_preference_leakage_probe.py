@@ -26,6 +26,13 @@ from attacks.registry import register_attack
 class ClientPreferenceLeakageProbe(BaseAttack):
     """Read-only probe that scores potential preference leakage risk."""
 
+    attack_family = "privacy_probe"
+    attack_category = "privacy_leakage_probe"
+    attack_strategy = "preference_leakage_probe"
+    attack_display_category = "隐私泄露探针"
+    mutates_participant_params = False
+    is_read_only = True
+
     def __init__(
         self,
         name: str = "client_preference_leakage_probe",
@@ -132,6 +139,7 @@ class ClientPreferenceLeakageProbe(BaseAttack):
 
         if not leakage_scores:
             probe_result = {
+                **self.semantic_metadata(),
                 "leakage_scores": {},
                 "high_risk_clients": [],
                 "high_risk_client_count": 0,
@@ -161,6 +169,7 @@ class ClientPreferenceLeakageProbe(BaseAttack):
                 if score > risk_threshold
             ]
             probe_result = {
+                **self.semantic_metadata(),
                 "leakage_scores": leakage_scores,
                 "high_risk_clients": high_risk_clients,
                 "high_risk_client_count": len(high_risk_clients),
@@ -195,6 +204,7 @@ class ClientPreferenceLeakageProbe(BaseAttack):
     ) -> Dict[str, Any]:
         if not self.history:
             return {
+                **self.semantic_metadata(),
                 "num_rounds": 0,
                 "rounds_with_high_risk_clients": 0,
                 "total_high_risk_detections": 0,
@@ -223,6 +233,7 @@ class ClientPreferenceLeakageProbe(BaseAttack):
             if item.get("malicious_target_scores")
         ]
         return {
+            **self.semantic_metadata(),
             "num_rounds": len(self.history),
             "rounds_with_high_risk_clients": sum(1 for count in risk_counts if count > 0),
             "total_high_risk_detections": int(sum(risk_counts)),

@@ -62,6 +62,12 @@
 - `final_eval`
 - `round_summaries`
 
+### 攻击语义说明
+
+当前标准矩阵中的 `client_update_scale`、`sign_flip`、`model_replacement` 统一解释为“投毒攻击家族”，分别对应更新缩放、符号翻转、模型替换三种策略。它们都会修改本轮 `malicious_clients` 对应的上传更新。
+
+`client_preference_leakage_probe` 不属于主动投毒攻击。它是只读隐私泄露探针，适合出现在隐私观测或隐私泄露风险分析场景中。
+
 ## 4. 标准实验一：baseline
 
 ### 目标
@@ -110,7 +116,7 @@ enable_malicious_clients: false
 
 ### 目标
 
-展示在存在恶意客户端时，轻量主动攻击模块如何影响实验场景与输出结果。
+展示在存在恶意客户端时，投毒攻击策略如何影响实验场景与输出结果。
 
 ### 建议配置
 
@@ -124,7 +130,7 @@ enable_malicious_clients: false
 - `malicious_client_ratio: 0.2`
 - `attack_scale: 3.0`
 
-当前阶段推荐把 `client_update_scale` 作为主展示攻击模块；如果需要展示第二种更接近经典联邦更新攻击的变体，也可以替换为：
+当前阶段可把 `client_update_scale` 作为基础投毒策略；如果需要展示第二种更接近经典联邦更新攻击的变体，也可以替换为：
 
 - `enabled_attacks: ["sign_flip"]`
 - `sign_flip_scale: 3.0`
@@ -162,7 +168,7 @@ attack_scale: 3.0
 - 攻击场景标签是否清晰
 - 恶意客户端链路是否生效
 - 攻击前后性能下降趋势
-- 可作为 `client_update_scale` 与 `sign_flip` 的轻量攻击对照入口
+- 可作为更新缩放投毒与符号翻转投毒的轻量对照入口
 
 ## 6. 标准实验三：defense_only
 
@@ -236,7 +242,7 @@ defense_clip_norm: 5.0
 - `attack_scale: 3.0`
 - `defense_clip_norm: 5.0`
 
-如果需要使用第二个主动攻击模块形成变体实验，也可以将攻击项替换为：
+如果需要使用第二个投毒策略形成变体实验，也可以将攻击项替换为：
 
 - `enabled_attacks: ["sign_flip"]`
 - `sign_flip_scale: 3.0`
@@ -350,7 +356,7 @@ defense_clip_norm: 5.0
 | 场景 | 攻击 | 防御 | 隐私观测 | malicious clients | 核心展示点 |
 | --- | --- | --- | --- | --- | --- |
 | `baseline` | 无 | 无 | 无 | 关闭 | 基线性能 |
-| `attack_only` | `client_update_scale` / `sign_flip` | 无 | 无 | 开启 | 攻击影响 |
+| `attack_only` | `client_update_scale` / `sign_flip` | 无 | 无 | 开启 | 投毒攻击影响 |
 | `defense_only` | 无 | `norm_clip` / `update_filter` | 无 | 关闭 | 防御预处理能力 |
 | `attack_and_defense` | `client_update_scale` / `sign_flip` | `norm_clip` / `update_filter` | 无 | 开启 | 最小攻防闭环 |
 | `attack_and_defense_with_privacy_observation` | `client_update_scale` / `sign_flip` | `norm_clip` / `update_filter` | `client_update_norm` | 开启 | 攻防 + 隐私三重视角 |

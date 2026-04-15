@@ -88,9 +88,14 @@
 
 ## 6. 已有攻击模块
 
+当前攻击侧按安全问题语义收口为两条线：
+
+- 投毒攻击家族：`ClientUpdateScaleAttack`、`SignFlipAttack`、`ModelReplacementAttack`。它们都会在聚合前修改恶意客户端上传更新，属于主动投毒链路。
+- 隐私泄露探针：`ClientPreferenceLeakageProbe`。它只读观察客户端更新，用于偏好泄露风险分析，不修改上传更新，不属于主动投毒。
+
 ### 6.1 `ClientPreferenceLeakageProbe`
 
-- 模块类型：attack-like 只读探针
+- 模块类型：只读隐私泄露探针 / privacy probe
 - 代码位置：`FedVLR/attacks/client_preference_leakage_probe.py`
 - 插入位置：`before_aggregation`
 - 是否只读：是
@@ -105,10 +110,11 @@
   - 作为第一个 FSHA-inspired 攻击样式模块
   - 不做主动攻击，风险低
   - 先验证“从可观测更新推断隐私风险”这条链路在联邦推荐主仓内可行
+  - 与投毒攻击家族分离，适合放在隐私观测或隐私泄露风险说明中
 
 ### 6.2 `ClientUpdateScaleAttack`
 
-- 模块类型：轻量主动攻击模块
+- 模块类型：投毒攻击家族 / 更新缩放策略
 - 代码位置：`FedVLR/attacks/client_update_scale_attack.py`
 - 插入位置：`before_aggregation`
 - 是否只读：否
@@ -125,7 +131,7 @@
 
 ### 6.3 `SignFlipAttack`
 
-- 模块类型：轻量主动攻击模块
+- 模块类型：投毒攻击家族 / 符号翻转策略
 - 代码位置：`FedVLR/attacks/sign_flip_attack.py`
 - 插入位置：`before_aggregation`
 - 是否只读：否
@@ -143,7 +149,7 @@
 
 ### 6.4 `ModelReplacementAttack`
 
-- 模块类型：更强的主动攻击模块，属于 model-replacement-like 最小工程版
+- 模块类型：投毒攻击家族 / 模型替换策略，属于 model-replacement-like 最小工程版
 - 代码位置：`FedVLR/attacks/model_replacement_attack.py`
 - 插入位置：`before_aggregation`
 - 是否只读：否

@@ -29,9 +29,27 @@ class BaseAttack:
         - attack metrics as a serializable dictionary
     """
 
+    attack_family = "unspecified"
+    attack_category = "unspecified"
+    attack_strategy = "unspecified"
+    attack_display_category = "未分类攻击"
+    mutates_participant_params = False
+    is_read_only = True
+
     def __init__(self, name: str, config: Optional[Dict[str, Any]] = None) -> None:
         self.name = name
         self.config = config or {}
+
+    def semantic_metadata(self) -> Dict[str, Any]:
+        """Return stable attack taxonomy metadata for result/API/front-end use."""
+        return {
+            "attack_family": self.attack_family,
+            "attack_category": self.attack_category,
+            "attack_strategy": self.attack_strategy,
+            "attack_display_category": self.attack_display_category,
+            "mutates_participant_params": self.mutates_participant_params,
+            "is_read_only": self.is_read_only,
+        }
 
     def before_round(
         self, round_state: MutableMapping[str, Any]

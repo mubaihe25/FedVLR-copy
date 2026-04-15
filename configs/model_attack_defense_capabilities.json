@@ -190,6 +190,12 @@
     {
       "name": "client_update_scale",
       "type": "active_attack",
+      "family": "poisoning",
+      "category": "poisoning",
+      "strategy": "scale",
+      "display_category": "投毒攻击",
+      "mutates_participant_params": true,
+      "is_read_only": false,
       "config_schema": {
         "attack_scale": "float"
       },
@@ -203,6 +209,12 @@
     {
       "name": "sign_flip",
       "type": "active_attack",
+      "family": "poisoning",
+      "category": "poisoning",
+      "strategy": "sign_flip",
+      "display_category": "投毒攻击",
+      "mutates_participant_params": true,
+      "is_read_only": false,
       "config_schema": {
         "sign_flip_scale": "float"
       },
@@ -216,6 +228,12 @@
     {
       "name": "model_replacement",
       "type": "active_attack",
+      "family": "poisoning",
+      "category": "poisoning",
+      "strategy": "model_replacement",
+      "display_category": "投毒攻击",
+      "mutates_participant_params": true,
+      "is_read_only": false,
       "config_schema": {
         "replacement_scale": "float",
         "replacement_rule": "string"
@@ -231,6 +249,12 @@
     {
       "name": "client_preference_leakage_probe",
       "type": "read_only_attack_like_probe",
+      "family": "privacy_probe",
+      "category": "privacy_leakage_probe",
+      "strategy": "preference_leakage_probe",
+      "display_category": "隐私泄露探针",
+      "mutates_participant_params": false,
+      "is_read_only": true,
       "config_schema": {
         "attack_probe_topk_ratio": "float",
         "attack_probe_std_factor": "float"

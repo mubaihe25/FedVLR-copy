@@ -29,10 +29,19 @@
 
 | 模块名 | 类型 | 关键配置项 | 默认值 | 是否修改 `participant_params` | 当前验证情况 |
 | --- | --- | --- | --- | --- | --- |
-| `client_update_scale` | 轻量主动攻击 | `attack_scale` | `2.0` | 是 | 已在标准矩阵中验证，可与 `norm_clip` 组成基础攻防对照。 |
-| `sign_flip` | 经典联邦更新攻击变体 | `sign_flip_scale` | `1.0` | 是 | 已在标准矩阵和 showcase_v1 中验证，可与 `update_filter` 或 `norm_clip` 做对照。 |
-| `model_replacement` | 更强主动攻击，minimal replacement-like | `replacement_scale`, `replacement_rule` | `5.0`, `aligned_mean` | 是 | 已在 FedRAP / MMFedRAP 正式强攻防主线和 9 个模型兼容验证中使用。 |
-| `client_preference_leakage_probe` | FSHA-inspired 只读隐私泄露探针 | `attack_probe_topk_ratio`, `attack_probe_std_factor` | `0.1`, `1.5` | 否 | 已实现并接入 hook，适合作为隐私风险观测，不等同于主动攻击。 |
+| `client_update_scale` | 投毒攻击家族：更新缩放策略 | `attack_scale` | `2.0` | 是 | 已在标准矩阵中验证，可与 `norm_clip` 组成基础攻防对照。 |
+| `sign_flip` | 投毒攻击家族：符号翻转策略 | `sign_flip_scale` | `1.0` | 是 | 已在标准矩阵和 showcase_v1 中验证，可与 `update_filter` 或 `norm_clip` 做对照。 |
+| `model_replacement` | 投毒攻击家族：模型替换策略，minimal replacement-like | `replacement_scale`, `replacement_rule` | `5.0`, `aligned_mean` | 是 | 已在 FedRAP / MMFedRAP 正式强攻防主线和 9 个模型兼容验证中使用。 |
+| `client_preference_leakage_probe` | FSHA-inspired 只读隐私泄露探针 | `attack_probe_topk_ratio`, `attack_probe_std_factor` | `0.1`, `1.5` | 否 | 已实现并接入 hook，适合作为隐私风险观测，不属于主动投毒攻击。 |
+
+### 3.1 攻击语义收口
+
+按照当前比赛展示与老师规划口径，攻击侧先按安全问题分成两类：
+
+- 投毒攻击家族：`client_update_scale`、`sign_flip`、`model_replacement`。三者都会在聚合前修改 `malicious_clients` 对应的 `participant_params`，区别只是投毒策略不同，分别是更新缩放、符号翻转和模型替换式放大。
+- 隐私泄露探针：`client_preference_leakage_probe`。它只读取客户端上传更新并输出偏好泄露风险分数，不修改 `participant_params`，因此不应与主动投毒攻击并列解释为“投毒攻击”。
+
+机器可读能力矩阵中对应增加 `family / category / strategy / mutates_participant_params / is_read_only` 字段，便于后续前端按“投毒攻击 / 隐私泄露观测”分组展示。
 
 ## 4. 防御模块能力表
 
@@ -100,7 +109,7 @@
 - `sign_flip`
 - `client_update_scale + norm_clip`
 - `client_update_norm`
-- `client_preference_leakage_probe` 作为只读观测项
+- `client_preference_leakage_probe` 作为只读隐私泄露探针 / 观测项
 
 建议标记为未验证或谨慎开放：
 

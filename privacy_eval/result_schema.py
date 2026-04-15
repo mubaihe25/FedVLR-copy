@@ -91,6 +91,7 @@ def _build_pipeline_summary(pipeline_info: Dict[str, Any]) -> Dict[str, Any]:
         "active_privacy_metrics": list(
             pipeline_info.get("active_privacy_metrics", [])
         ),
+        "attack_taxonomy": pipeline_info.get("attack_taxonomy", {}),
         "experiment_mode": pipeline_info.get("experiment_mode"),
         "scenario_tags": list(pipeline_info.get("scenario_tags", [])),
         "malicious_client_count": int(pipeline_info.get("malicious_client_count", 0)),
@@ -135,6 +136,7 @@ def build_experiment_summary(result: ExperimentResult) -> Dict[str, Any]:
         "active_attacks": list(result.active_attacks),
         "active_defenses": list(result.active_defenses),
         "active_privacy_metrics": list(result.active_privacy_metrics),
+        "attack_taxonomy": metadata.get("attack_taxonomy", {}),
         "malicious_client_summary": metadata.get("malicious_client_summary", {}),
         "final_eval": asdict(result.final_eval),
         "round_summaries": [
