@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "updated_at": "2026-04-12",
+  "updated_at": "2026-04-16",
   "max_enabled_attacks": 2,
   "max_enabled_defenses": 2,
   "max_enabled_privacy_metrics": 3,
@@ -247,6 +247,38 @@
       "notes": "minimal replacement-like 攻击，是当前强攻防主线的推荐攻击模块。"
     },
     {
+      "name": "poisoning_attack",
+      "aliases": ["poisoning", "nondirected_poisoning"],
+      "type": "active_attack",
+      "family": "poisoning",
+      "category": "poisoning",
+      "strategy": "unified_nondirected_poisoning",
+      "display_category": "投毒攻击",
+      "mutates_participant_params": true,
+      "is_read_only": false,
+      "poisoning_mode": "nondirected",
+      "substrategies": ["client_update_scale", "sign_flip", "model_replacement"],
+      "config_schema": {
+        "poisoning_enabled_substrategies": "list[string]",
+        "poisoning_mix_rule": "string",
+        "poisoning_attack_scale": "float",
+        "poisoning_sign_flip_scale": "float",
+        "poisoning_replacement_scale": "float",
+        "poisoning_replacement_rule": "string"
+      },
+      "default_values": {
+        "poisoning_enabled_substrategies": ["client_update_scale", "sign_flip", "model_replacement"],
+        "poisoning_mix_rule": "round_robin",
+        "poisoning_attack_scale": 2.0,
+        "poisoning_sign_flip_scale": 1.0,
+        "poisoning_replacement_scale": 5.0,
+        "poisoning_replacement_rule": "aligned_mean"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "统一非定向投毒入口；按 round_robin 将 malicious_clients 分流到更新缩放、符号翻转、模型替换三种子策略，每个恶意客户端只命中一种策略。初赛阶段不包含 target item/backdoor 式定向投毒。"
+    },
+    {
       "name": "client_preference_leakage_probe",
       "type": "read_only_attack_like_probe",
       "family": "privacy_probe",
@@ -370,6 +402,36 @@
       "status": "validated"
     },
     {
+      "name": "attack_only_poisoning",
+      "scenario": "attack_only",
+      "attacks": ["poisoning_attack"],
+      "defenses": [],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated"
+    },
+    {
+      "name": "poisoning_trimmed_mean",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["trimmed_mean"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated"
+    },
+    {
+      "name": "poisoning_norm_clip",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["norm_clip"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP"],
+      "status": "recommended_unvalidated"
+    },
+    {
       "name": "scale_norm_clip",
       "scenario": "attack_and_defense",
       "attacks": ["client_update_scale"],
@@ -389,6 +451,9 @@
     }
   ],
   "recommended_showcase_combinations": [
+    "attack_only_poisoning",
+    "poisoning_trimmed_mean",
+    "poisoning_norm_clip",
     "model_replacement",
     "model_replacement_trimmed_mean",
     "scale_norm_clip"

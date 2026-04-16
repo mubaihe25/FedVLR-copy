@@ -377,3 +377,36 @@
 
 - 详细版适合调试、研究和复盘，保留完整字段
 - 摘要版适合 API、前端和答辩展示，只保留轻量关键字段
+
+## 统一非定向投毒结果字段
+
+新增 `poisoning_attack` 后，详细版结果会在 `round_metrics[*].extra.attack_metrics.poisoning_attack` 中记录统一投毒语义。该模块是非定向投毒入口，不包含 target item、backdoor 或定向曝光目标。
+
+轮级字段建议：
+
+- `attack_family`: 固定为 `poisoning`
+- `attack_category`: 固定为 `poisoning`
+- `attack_strategy`: 固定为 `unified_nondirected_poisoning`
+- `poisoning_mode`: 固定为 `nondirected`
+- `poisoning_mix_rule`: 当前默认 `round_robin`
+- `poisoning_enabled_substrategies`: 本轮启用的投毒子策略列表
+- `poisoned_clients`: 本轮被投毒处理的恶意客户端
+- `poisoned_client_count`: 本轮投毒客户端数
+- `strategy_client_counts`: 各子策略分到的客户端数量
+- `strategy_attacked_clients`: 各子策略实际处理的客户端列表
+- `strategy_metrics`: 各旧攻击模块返回的子策略指标
+- `avg_poisoned_norm_before`: 投毒前恶意更新平均范数
+- `avg_poisoned_norm_after`: 投毒后恶意更新平均范数
+
+实验级字段建议写入 `experiment_result.metadata.attack_summaries.poisoning_attack`：
+
+- `num_rounds`
+- `rounds_with_attacks`
+- `total_poisoned_clients`
+- `max_poisoned_client_count`
+- `strategy_client_counts_total`
+- `strategy_round_coverage`
+- `poisoning_mode`
+- `poisoning_mix_rule`
+
+旧的 `client_update_scale`、`sign_flip`、`model_replacement` 结果字段继续保留，用于消融实验和历史结果兼容；推荐展示口径优先使用 `poisoning_attack` 的统一字段。

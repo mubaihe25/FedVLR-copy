@@ -129,3 +129,35 @@
 - 统一配置 schema 中的 `malicious_client_config / training_params / attack_params / defense_params / privacy_params` 分组表单。
 
 当前本文件只提供说明依据；真正可供程序读取的结构见 `configs/model_attack_defense_capabilities.json` 与 `configs/experiment_config_schema.json`。
+
+## 统一非定向投毒入口：poisoning_attack
+
+`poisoning_attack` 是当前推荐给前端配置页使用的统一投毒攻击入口。它不新增定向投毒能力，而是在一个模块内部调度现有三种非定向投毒子策略：
+
+- 更新缩放投毒：`client_update_scale`
+- 符号翻转投毒：`sign_flip`
+- 模型替换式非定向投毒：`model_replacement`
+
+该入口的核心设计是“恶意客户端分流”，不是把三个攻击顺序叠加在同一个客户端更新上。默认 `poisoning_mix_rule = round_robin`，即把本轮 `malicious_clients` 依次分配给三个子策略，每个恶意客户端只命中一种策略。这样可以避免同一份更新被多次放大、翻转和替换导致解释困难，也更符合“统一投毒攻击家族”的展示口径。
+
+当前语义字段为：
+
+- `attack_family = poisoning`
+- `attack_category = poisoning`
+- `attack_strategy = unified_nondirected_poisoning`
+- `poisoning_mode = nondirected`
+- `mutates_participant_params = true`
+- `is_read_only = false`
+
+`client_preference_leakage_probe` 继续归为隐私泄露探针。它只读分析客户端更新中的偏好泄露风险，不修改 `participant_params`，不应并入主动投毒链路。
+
+## 推荐开放口径
+
+后续前端和答辩材料建议优先展示：
+
+- `baseline`
+- `attack_only_poisoning`
+- `attack_and_defense_poisoning_trimmed_mean`
+- `attack_and_defense_poisoning_norm_clip`
+
+旧的 `client_update_scale`、`sign_flip`、`model_replacement` 继续保留，适合做消融实验、策略对比或历史结果兼容。

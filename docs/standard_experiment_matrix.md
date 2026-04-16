@@ -476,3 +476,25 @@ defense_clip_norm: 5.0
 - `MMFedRAP` 标准化实验跑通
 
 因此当前标准实验矩阵应以“已经可以运行和展示的最小闭环”为核心，不应把规划项写成既成事实。
+
+## 统一投毒攻击推荐实验补充
+
+为配合老师规划下的“投毒攻击 / 隐私泄露观测 / 防御链 / 观测模块”口径，后续标准实验矩阵建议增加以下统一投毒入口场景：
+
+| 场景 | enabled_attacks | enabled_defenses | 说明 |
+| --- | --- | --- | --- |
+| `baseline` | `[]` | `[]` | 正常联邦训练基线。 |
+| `attack_only_poisoning` | `["poisoning_attack"]` | `[]` | 统一非定向投毒攻击，内部将恶意客户端分流到更新缩放、符号翻转和模型替换式投毒。 |
+| `attack_and_defense_poisoning_trimmed_mean` | `["poisoning_attack"]` | `["trimmed_mean"]` | 推荐主展示攻防组合，体现统一投毒攻击与鲁棒聚合式防御的对照。 |
+| `attack_and_defense_poisoning_norm_clip` | `["poisoning_attack"]` | `["norm_clip"]` | 轻量防御对照，体现聚合前范数约束对投毒更新的抑制。 |
+
+建议参数：
+
+- `poisoning_mix_rule = "round_robin"`
+- `poisoning_enabled_substrategies = ["client_update_scale", "sign_flip", "model_replacement"]`
+- `poisoning_attack_scale = 2.0`
+- `poisoning_sign_flip_scale = 1.0`
+- `poisoning_replacement_scale = 5.0`
+- `poisoning_replacement_rule = "aligned_mean"`
+
+旧的三个主动攻击仍可单独使用，适合做消融实验或策略对比；但前端主入口和答辩主线建议优先使用 `poisoning_attack`。

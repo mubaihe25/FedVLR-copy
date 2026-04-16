@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "FedVLR Unified Experiment Config",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "统一实验配置草案，用于 FedVLR 内部 launcher、后续 API 与前端配置页对齐。当前为轻量 schema，不引入额外运行时依赖。",
   "type": "object",
   "required": ["model", "dataset", "scenario"],
@@ -35,7 +35,7 @@
       "items": { "type": "string" },
       "default": [],
       "maxItems": 2,
-      "description": "启用的攻击/攻击样式观测模块列表。投毒攻击包括 client_update_scale、sign_flip、model_replacement；client_preference_leakage_probe 是只读隐私泄露探针，不属于主动投毒。执行顺序等于列表顺序。"
+      "description": "启用的攻击/攻击样式观测模块列表。推荐使用 poisoning_attack 作为统一非定向投毒入口；旧的 client_update_scale、sign_flip、model_replacement 仍兼容，适合消融或策略对比。client_preference_leakage_probe 是只读隐私泄露探针，不属于主动投毒。执行顺序等于列表顺序。"
     },
     "enabled_defenses": {
       "type": "array",
@@ -87,7 +87,7 @@
     },
     "attack_params": {
       "type": "object",
-      "description": "按模块名分组的攻击参数，例如 {\"model_replacement\": {\"replacement_scale\": 5.0}}。",
+      "description": "按模块名分组的攻击参数，例如 {\"poisoning_attack\": {\"poisoning_mix_rule\": \"round_robin\", \"poisoning_attack_scale\": 2.0}}。poisoning_attack 当前只支持非定向投毒，不支持 target item/backdoor 式定向投毒。",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true
@@ -130,13 +130,13 @@
       },
       {
         "scenario": "attack_only",
-        "enabled_attacks": ["model_replacement"],
+        "enabled_attacks": ["poisoning_attack"],
         "enabled_defenses": [],
         "enabled_privacy_metrics": []
       },
       {
         "scenario": "attack_and_defense",
-        "enabled_attacks": ["model_replacement"],
+        "enabled_attacks": ["poisoning_attack"],
         "enabled_defenses": ["trimmed_mean"],
         "enabled_privacy_metrics": []
       }

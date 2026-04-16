@@ -482,3 +482,23 @@
 - 前端控制台其他页面真实联调
 
 以上规划当前均未实现，不应在比赛展示时表述为“已完成功能”。
+
+## 统一非定向投毒模块：poisoning_attack
+
+当前新增 `poisoning_attack` 作为投毒攻击家族的统一入口。它并不删除旧模块，也不改变旧模块算法，而是在聚合前 hook 中将本轮恶意客户端分流给已有三种非定向投毒子策略：
+
+- `client_update_scale`：放大恶意客户端更新
+- `sign_flip`：翻转恶意客户端更新方向
+- `model_replacement`：构造共享恶意方向并放大，是 replacement-like 的协同式非定向投毒
+
+`model_replacement` 当前不是定向投毒，因为它没有 target item、target category、target user、触发器或目标曝光指标。它只是让恶意客户端更新在共享方向上更强地影响聚合结果。
+
+`poisoning_attack` 不采用“scale -> sign_flip -> model_replacement”顺序叠加，因为这种串行叠加会让同一个恶意更新被多次变换，难以解释每种策略的贡献，也容易产生过强但不可控的攻击效果。当前实现采用 `round_robin` 分流：每个恶意客户端只命中一种子策略，最终仍返回一份统一的 `participant_params`。
+
+`client_preference_leakage_probe` 继续作为 FSHA-inspired 只读隐私泄露探针。它不属于主动投毒，不修改聚合输入，只输出隐私风险观测结果。
+
+## 当前边界
+
+- 已实现：统一非定向投毒入口、子策略分流、统一轮级/实验级结果字段。
+- 未实现：target item/backdoor 式定向投毒、目标推荐排名攻击、曝光率攻击指标。
+- 保留兼容：旧的三个主动攻击模块仍可单独启用，用于消融与历史实验复现。
