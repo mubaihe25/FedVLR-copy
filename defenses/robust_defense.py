@@ -25,6 +25,24 @@ from defenses.update_filter_defense import UpdateFilterDefense
 class RobustDefense(BaseDefense):
     """Coordinate existing robust defenses through one configurable entry."""
 
+    CONFIG_KEYS = (
+        "robust_defense_mode",
+        "robust_clip_norm",
+        "defense_clip_norm",
+        "robust_filter_rule",
+        "filter_rule",
+        "robust_filter_std_factor",
+        "filter_std_factor",
+        "robust_max_filtered_ratio",
+        "max_filtered_ratio",
+        "robust_trim_ratio",
+        "trim_ratio",
+        "robust_min_clients_for_trim",
+        "min_clients_for_trim",
+        "robust_trim_rule",
+        "trim_rule",
+    )
+
     MODE_STEPS = {
         "clip": ["norm_clip"],
         "filter": ["update_filter"],
@@ -44,8 +62,7 @@ class RobustDefense(BaseDefense):
         config: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        cfg = dict(config or {})
-        cfg.update({key: value for key, value in kwargs.items() if value is not None})
+        cfg = self._normalize_config(config, kwargs)
         super().__init__(name=name, config=cfg)
         self.robust_defense_mode = str(
             cfg.get("robust_defense_mode", "trimmed_mean")
@@ -99,6 +116,42 @@ class RobustDefense(BaseDefense):
         }
         self.last_round_output: Dict[str, Any] = {}
         self.history: List[Dict[str, Any]] = []
+
+    @classmethod
+    def _normalize_config(
+        cls, config: Optional[Any], kwargs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build a plain dict from either a dict or FedVLR Config-like object.
+
+        ExperimentHookManager passes the project Config object here. It supports
+        ``get(...)`` but is not iterable, so ``dict(config)`` is unsafe.
+        """
+        cfg: Dict[str, Any] = {}
+        if isinstance(config, dict):
+            cfg.update(config)
+        elif config is not None:
+            missing = object()
+            for key in cls.CONFIG_KEYS:
+                value = cls._config_get(config, key, missing)
+                if value is not missing:
+                    cfg[key] = value
+
+        cfg.update({key: value for key, value in kwargs.items() if value is not None})
+        return cfg
+
+    @staticmethod
+    def _config_get(config: Any, key: str, default: Any = None) -> Any:
+        getter = getattr(config, "get", None)
+        if callable(getter):
+            try:
+                return getter(key, default)
+            except TypeError:
+                try:
+                    value = getter(key)
+                except Exception:
+                    return default
+                return default if value is None else value
+        return getattr(config, key, default)
 
     def _steps_for_mode(self) -> List[str]:
         return list(self.MODE_STEPS.get(self.robust_defense_mode, ["trimmed_mean"]))
