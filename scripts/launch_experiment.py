@@ -74,7 +74,16 @@ def get_model_record(capabilities: Dict[str, Any], model_name: str) -> Optional[
 
 
 def module_names(capabilities: Dict[str, Any], section: str) -> set[str]:
-    return {str(item.get("name")) for item in capabilities.get(section, [])}
+    names: set[str] = set()
+    for item in capabilities.get(section, []):
+        name = str(item.get("name", "")).strip()
+        if name:
+            names.add(name)
+        for alias in item.get("aliases", []):
+            alias_name = str(alias).strip()
+            if alias_name:
+                names.add(alias_name)
+    return names
 
 
 def matches_validated_combination(
@@ -154,8 +163,13 @@ def validate_config(
 
     if len(attacks) > int(capabilities.get("max_enabled_attacks", 2)):
         errors.append("too_many_attacks:{}>{}".format(len(attacks), capabilities.get("max_enabled_attacks")))
-    if len(defenses) > int(capabilities.get("max_enabled_defenses", 2)):
-        errors.append("too_many_defenses:{}>{}".format(len(defenses), capabilities.get("max_enabled_defenses")))
+    recommended_defense_limit = capabilities.get("recommended_max_enabled_defenses")
+    if recommended_defense_limit is not None and len(defenses) > int(recommended_defense_limit):
+        warnings.append(
+            "defense_chain_exceeds_recommended_length:{}>{}".format(
+                len(defenses), recommended_defense_limit
+            )
+        )
     if len(privacy_metrics) > int(capabilities.get("max_enabled_privacy_metrics", 3)):
         errors.append(
             "too_many_privacy_metrics:{}>{}".format(

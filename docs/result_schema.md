@@ -410,3 +410,35 @@
 - `poisoning_mix_rule`
 
 旧的 `client_update_scale`、`sign_flip`、`model_replacement` 结果字段继续保留，用于消融实验和历史结果兼容；推荐展示口径优先使用 `poisoning_attack` 的统一字段。
+
+## 统一鲁棒防御结果字段
+
+新增 `robust_defense` 后，详细版结果会在 `round_metrics[*].extra.defense_metrics.robust_defense` 中记录统一鲁棒防御语义。该模块是已有防御能力的统一入口，不新增 Krum / Median 等算法，也不重写训练主聚合框架。
+
+轮级字段建议：
+
+- `defense_family`: 固定为 `robust_defense`
+- `defense_category`: 固定为 `robust_defense`
+- `defense_strategy`: 固定为 `unified_robust_defense`
+- `robust_defense_mode`: 本轮使用的鲁棒防御模式
+- `applied_steps`: 实际执行的防御步骤，例如 `["norm_clip", "trimmed_mean"]`
+- `participant_count_before`: 防御处理前参与客户端数
+- `participant_count_after`: 防御处理后参与客户端数
+- `clipped_client_count`: 本轮被裁剪客户端数
+- `filtered_client_count`: 本轮被过滤客户端数
+- `trimmed_mean_applied`: 是否成功应用截尾均值式处理
+- `retained_client_count_equivalent`: 处理后等效保留客户端数
+- `step_metrics`: 各子步骤返回的摘要指标
+
+实验级字段建议写入 `experiment_result.metadata.defense_summaries.robust_defense`：
+
+- `num_rounds`
+- `rounds_with_robust_defense`
+- `robust_defense_mode`
+- `mode_usage_summary`
+- `total_clipped_clients`
+- `total_filtered_clients`
+- `rounds_with_trimmed_mean`
+- `avg_retained_client_count_equivalent`
+
+旧的 `norm_clip`、`update_filter`、`trimmed_mean` 结果字段继续保留，用于消融实验和历史结果兼容；推荐展示口径优先使用 `robust_defense` 的统一字段。`client_update_anomaly_detector` 仍属于只读检测/解释模块，不应在结果语义上并入主动鲁棒防御。

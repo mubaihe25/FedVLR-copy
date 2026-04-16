@@ -2,7 +2,8 @@
   "version": "0.1.0",
   "updated_at": "2026-04-16",
   "max_enabled_attacks": 2,
-  "max_enabled_defenses": 2,
+  "recommended_max_enabled_defenses": 3,
+  "defense_selection_policy": "multiple_allowed_with_unverified_warnings",
   "max_enabled_privacy_metrics": 3,
   "execution_order": [
     "attack_chain",
@@ -304,6 +305,12 @@
     {
       "name": "client_update_anomaly",
       "type": "read_only_detector",
+      "family": "defense_observation",
+      "category": "anomaly_detection",
+      "strategy": "client_update_anomaly",
+      "display_category": "检测/解释模块",
+      "is_read_only": true,
+      "mutates_participant_params": false,
       "config_schema": {
         "defense_anomaly_std_factor": "float"
       },
@@ -317,6 +324,12 @@
     {
       "name": "norm_clip",
       "type": "active_pre_aggregation_defense",
+      "family": "robust_defense",
+      "category": "robust_preprocessing",
+      "strategy": "clip",
+      "display_category": "鲁棒防御",
+      "is_read_only": false,
+      "mutates_participant_params": true,
       "config_schema": {
         "defense_clip_norm": "float"
       },
@@ -330,6 +343,12 @@
     {
       "name": "update_filter",
       "type": "active_pre_aggregation_defense",
+      "family": "robust_defense",
+      "category": "robust_preprocessing",
+      "strategy": "filter",
+      "display_category": "鲁棒防御",
+      "is_read_only": false,
+      "mutates_participant_params": true,
       "config_schema": {
         "filter_rule": "string",
         "filter_std_factor": "float",
@@ -347,6 +366,12 @@
     {
       "name": "trimmed_mean",
       "type": "minimal_robust_aggregation_defense",
+      "family": "robust_defense",
+      "category": "robust_aggregation",
+      "strategy": "trimmed_mean",
+      "display_category": "鲁棒防御",
+      "is_read_only": false,
+      "mutates_participant_params": true,
       "config_schema": {
         "trim_ratio": "float",
         "min_clients_for_trim": "integer",
@@ -360,6 +385,41 @@
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": ["FedAvg", "FedNCF", "FedRAP", "FedVBPR", "PFedRec", "MMFedAvg", "MMFedNCF", "MMFedRAP", "MMPFedRec"],
       "notes": "当前强攻防主线推荐防御模块。"
+    },
+    {
+      "name": "robust_defense",
+      "aliases": ["robust", "robust_aggregation_defense"],
+      "type": "unified_robust_defense",
+      "family": "robust_defense",
+      "category": "robust_defense",
+      "strategy": "unified_robust_defense",
+      "display_category": "鲁棒防御",
+      "is_read_only": false,
+      "mutates_participant_params": true,
+      "supported_modes": ["clip", "filter", "trimmed_mean", "clip_then_trimmed_mean", "filter_then_trimmed_mean", "clip_then_filter_then_trimmed_mean"],
+      "config_schema": {
+        "robust_defense_mode": "string",
+        "robust_clip_norm": "float",
+        "robust_filter_rule": "string",
+        "robust_filter_std_factor": "float",
+        "robust_max_filtered_ratio": "float",
+        "robust_trim_ratio": "float",
+        "robust_min_clients_for_trim": "integer",
+        "robust_trim_rule": "string"
+      },
+      "default_values": {
+        "robust_defense_mode": "trimmed_mean",
+        "robust_clip_norm": 5.0,
+        "robust_filter_rule": "update_norm > mean + filter_std_factor * std",
+        "robust_filter_std_factor": 2.0,
+        "robust_max_filtered_ratio": 0.5,
+        "robust_trim_ratio": 0.2,
+        "robust_min_clients_for_trim": 5,
+        "robust_trim_rule": "coordinate_trimmed_mean"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "统一鲁棒防御入口；内部复用 norm_clip、update_filter、trimmed_mean。默认 trimmed_mean 模式更接近鲁棒聚合本体，组合模式需显式选择。"
     }
   ],
   "privacy_metrics": [
@@ -432,6 +492,38 @@
       "status": "recommended_unvalidated"
     },
     {
+      "name": "attack_and_robust_defense",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["robust_defense"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated"
+    },
+    {
+      "name": "attack_and_robust_defense_trimmed_mean",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["robust_defense"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated",
+      "notes": "建议设置 robust_defense_mode=trimmed_mean。"
+    },
+    {
+      "name": "attack_and_robust_defense_clip_then_trimmed_mean",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["robust_defense"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated",
+      "notes": "建议设置 robust_defense_mode=clip_then_trimmed_mean。"
+    },
+    {
       "name": "scale_norm_clip",
       "scenario": "attack_and_defense",
       "attacks": ["client_update_scale"],
@@ -452,6 +544,9 @@
   ],
   "recommended_showcase_combinations": [
     "attack_only_poisoning",
+    "attack_and_robust_defense",
+    "attack_and_robust_defense_trimmed_mean",
+    "attack_and_robust_defense_clip_then_trimmed_mean",
     "poisoning_trimmed_mean",
     "poisoning_norm_clip",
     "model_replacement",
@@ -467,7 +562,7 @@
       }
     },
     {
-      "reason": "多主动防御叠加尚未系统验证",
+      "reason": "多主动防御可配置，但应优先使用 robust_defense 统一入口；未验证组合只给 warning，不再作为硬错误。",
       "example": {
         "attacks": ["model_replacement"],
         "defenses": ["update_filter", "trimmed_mean"]

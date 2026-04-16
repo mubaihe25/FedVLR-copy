@@ -502,3 +502,38 @@
 - 已实现：统一非定向投毒入口、子策略分流、统一轮级/实验级结果字段。
 - 未实现：target item/backdoor 式定向投毒、目标推荐排名攻击、曝光率攻击指标。
 - 保留兼容：旧的三个主动攻击模块仍可单独启用，用于消融与历史实验复现。
+
+## 统一鲁棒防御模块：robust_defense
+
+当前新增 `robust_defense` 作为鲁棒防御主线的统一入口。它并不删除旧模块，也不改变旧模块算法，而是在聚合前 hook 中复用已有三类防御能力：
+
+- `norm_clip`：裁剪型鲁棒防御，对超阈值更新做范数裁剪。
+- `update_filter`：过滤型鲁棒防御，基于更新范数异常规则移除可疑客户端。
+- `trimmed_mean`：鲁棒聚合型防御，通过逐坐标截尾降低极端更新影响。
+
+`client_update_anomaly_detector` 没有并入主动鲁棒防御，因为它是只读检测/解释模块，只输出可疑客户端和异常分数，不修改 `participant_params`，也不会改变聚合输入。
+
+`robust_defense` 不把 `norm_clip -> update_filter -> trimmed_mean` 固定串成唯一链路。原因是三者处在不同层次：裁剪保留客户端、过滤移除客户端、截尾均值近似鲁棒聚合。如果默认全串行，会让实验难以解释每一步的贡献，也可能在小客户端数场景中过度处理。因此当前通过 `robust_defense_mode` 显式选择模式：
+
+- `clip`
+- `filter`
+- `trimmed_mean`
+- `clip_then_trimmed_mean`
+- `filter_then_trimmed_mean`
+- `clip_then_filter_then_trimmed_mean`
+
+默认模式为 `trimmed_mean`，因为它最接近鲁棒聚合本体；展示完整鲁棒链路时建议使用 `clip_then_trimmed_mean`。
+
+当前统一语义字段为：
+
+- `defense_family = robust_defense`
+- `defense_category = robust_defense`
+- `defense_strategy = unified_robust_defense`
+- `defense_display_category = 鲁棒防御`
+- `is_read_only = false`
+
+## 鲁棒防御结果边界
+
+`robust_defense` 会在 `round_metrics[*].extra.defense_metrics.robust_defense` 中写入统一轮级结果，在 `experiment_result.metadata.defense_summaries.robust_defense` 中写入实验级 summary。旧的 `norm_clip`、`update_filter`、`trimmed_mean` 仍可单独启用并保留旧字段，用于消融实验和历史结果兼容。
+
+当前没有新增 Krum、Median 等新鲁棒聚合算法，也没有重写主聚合框架；这是一个 minimal engineering version，用于把已有防御能力按“鲁棒防御”口径收口。

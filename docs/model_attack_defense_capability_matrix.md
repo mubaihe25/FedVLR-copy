@@ -161,3 +161,51 @@
 - `attack_and_defense_poisoning_norm_clip`
 
 旧的 `client_update_scale`、`sign_flip`、`model_replacement` 继续保留，适合做消融实验、策略对比或历史结果兼容。
+
+## 统一鲁棒防御入口：robust_defense
+
+`robust_defense` 是当前推荐给前端配置页使用的统一鲁棒防御入口。它不新增 Krum、Median 等新算法，也不替换训练主链路，而是在现有聚合前 hook 中复用已有三类防御能力：
+
+- 裁剪型鲁棒预处理：`norm_clip`
+- 过滤型鲁棒预处理：`update_filter`
+- 鲁棒聚合型防御：`trimmed_mean`
+
+三类模块的边界如下：
+
+| 模块 | 归属 | 是否主动修改聚合输入 | 说明 |
+| --- | --- | --- | --- |
+| `norm_clip` | 裁剪型鲁棒防御 | 是 | 保留所有客户端，对超阈值更新做范数裁剪。 |
+| `update_filter` | 过滤型鲁棒防御 | 是 | 基于更新范数异常规则移除部分可疑客户端。 |
+| `trimmed_mean` | 鲁棒聚合型防御 | 是 | 通过逐坐标截尾降低极端更新影响，是当前最接近鲁棒聚合本体的模块。 |
+| `client_update_anomaly` | 检测/解释模块 | 否 | 只读输出可疑客户端和异常分数，不并入主动鲁棒防御主线。 |
+
+`robust_defense` 支持的模式包括：
+
+- `clip`
+- `filter`
+- `trimmed_mean`
+- `clip_then_trimmed_mean`
+- `filter_then_trimmed_mean`
+- `clip_then_filter_then_trimmed_mean`
+
+默认推荐模式为 `trimmed_mean`，原因是它最接近鲁棒聚合本体，且不会在默认情况下额外叠加裁剪或过滤带来的解释成本。若需要展示更完整的预处理加鲁棒聚合链路，可使用 `clip_then_trimmed_mean`。
+
+当前语义字段为：
+
+- `defense_family = robust_defense`
+- `defense_category = robust_defense`
+- `defense_strategy = unified_robust_defense`
+- `defense_display_category = 鲁棒防御`
+- `is_read_only = false`
+
+## 防御选择策略更新
+
+能力矩阵不再把防御数量作为硬限制。`enabled_defenses` 可以表达多个防御模块组合；launcher 只会根据 `recommended_max_enabled_defenses` 和 `validated_combinations` 给出 warning，而不是直接拒绝。
+
+推荐优先开放的防御口径是：
+
+- `robust_defense`
+- `robust_defense` + `robust_defense_mode = trimmed_mean`
+- `robust_defense` + `robust_defense_mode = clip_then_trimmed_mean`
+
+旧的 `norm_clip`、`update_filter`、`trimmed_mean` 继续保留，适合消融实验、策略对比或历史结果兼容。

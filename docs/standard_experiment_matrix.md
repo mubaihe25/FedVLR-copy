@@ -498,3 +498,29 @@ defense_clip_norm: 5.0
 - `poisoning_replacement_rule = "aligned_mean"`
 
 旧的三个主动攻击仍可单独使用，适合做消融实验或策略对比；但前端主入口和答辩主线建议优先使用 `poisoning_attack`。
+
+## 统一鲁棒防御推荐实验补充
+
+为配合“投毒攻击 / 鲁棒防御 / 隐私泄露观测”的统一展示口径，后续标准实验矩阵建议增加以下鲁棒防御入口场景：
+
+| 场景 | enabled_attacks | enabled_defenses | defense_params | 说明 |
+| --- | --- | --- | --- | --- |
+| `baseline` | `[]` | `[]` | `{}` | 正常联邦训练基线。 |
+| `attack_only_poisoning` | `["poisoning_attack"]` | `[]` | `{}` | 统一非定向投毒攻击，不启用防御。 |
+| `attack_and_robust_defense` | `["poisoning_attack"]` | `["robust_defense"]` | `{"robust_defense_mode": "trimmed_mean"}` | 推荐默认鲁棒防御对照，突出鲁棒聚合型防御能力。 |
+| `attack_and_robust_defense_trimmed_mean` | `["poisoning_attack"]` | `["robust_defense"]` | `{"robust_defense_mode": "trimmed_mean"}` | 与上方等价，适合在答辩中强调截尾均值模式。 |
+| `attack_and_robust_defense_clip_then_trimmed_mean` | `["poisoning_attack"]` | `["robust_defense"]` | `{"robust_defense_mode": "clip_then_trimmed_mean"}` | 展示“裁剪预处理 + 鲁棒聚合”的组合链路。 |
+
+建议基础参数：
+
+- `robust_clip_norm = 30.0`
+- `robust_filter_rule = "mean_std_norm"`
+- `robust_filter_std_factor = 2.0`
+- `robust_max_filtered_ratio = 0.3`
+- `robust_trim_ratio = 0.2`
+- `robust_min_clients_for_trim = 5`
+- `robust_trim_rule = "coordinate_trimmed_mean"`
+
+旧的 `norm_clip`、`update_filter`、`trimmed_mean` 仍可单独使用，适合做消融实验、策略对比或历史结果复现；但前端主入口和答辩主线建议优先使用 `robust_defense`。
+
+当前防御模块数量不再作为硬限制。多防御组合可以表达，但若不在 `validated_combinations` 中，应在前端和 launcher 中提示“未验证组合”，而不是直接禁止。

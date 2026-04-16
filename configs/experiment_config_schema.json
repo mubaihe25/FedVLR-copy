@@ -41,8 +41,7 @@
       "type": "array",
       "items": { "type": "string" },
       "default": [],
-      "maxItems": 2,
-      "description": "启用的防御模块列表。执行顺序等于列表顺序。"
+      "description": "启用的防御模块列表。推荐使用 robust_defense 作为统一鲁棒防御入口；旧的 norm_clip、update_filter、trimmed_mean 仍兼容，适合消融或策略对比。client_update_anomaly 是只读检测/解释模块，不属于主动鲁棒防御。执行顺序等于列表顺序，未验证组合会给出 warning。"
     },
     "enabled_privacy_metrics": {
       "type": "array",
@@ -95,7 +94,7 @@
     },
     "defense_params": {
       "type": "object",
-      "description": "按模块名分组的防御参数，例如 {\"trimmed_mean\": {\"trim_ratio\": 0.2}}。",
+      "description": "按模块名分组的防御参数，例如 {\"robust_defense\": {\"robust_defense_mode\": \"trimmed_mean\", \"robust_trim_ratio\": 0.2}}。",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true
@@ -119,7 +118,8 @@
   "multi_module_policy": {
     "execution_order": "enabled_attacks -> enabled_defenses -> enabled_privacy_metrics",
     "max_enabled_attacks": 2,
-    "max_enabled_defenses": 2,
+    "defense_selection_policy": "multiple_allowed_with_unverified_warnings",
+    "recommended_max_enabled_defenses": 3,
     "max_enabled_privacy_metrics": 3,
     "recommended_open_combinations": [
       {
@@ -137,8 +137,19 @@
       {
         "scenario": "attack_and_defense",
         "enabled_attacks": ["poisoning_attack"],
-        "enabled_defenses": ["trimmed_mean"],
+        "enabled_defenses": ["robust_defense"],
         "enabled_privacy_metrics": []
+      },
+      {
+        "scenario": "attack_and_defense",
+        "enabled_attacks": ["poisoning_attack"],
+        "enabled_defenses": ["robust_defense"],
+        "enabled_privacy_metrics": [],
+        "defense_params": {
+          "robust_defense": {
+            "robust_defense_mode": "clip_then_trimmed_mean"
+          }
+        }
       }
     ],
     "unverified_examples": [
