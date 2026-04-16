@@ -83,6 +83,8 @@ class ExperimentHookManager:
                 "enabled_privacy_metrics": list(self.enabled_privacy_metrics),
                 "type": config.get("type"),
                 "comment": config.get("comment"),
+                "output_run_id": config.get("output_run_id"),
+                "result_file_name": config.get("result_file_name"),
             }
         )
 

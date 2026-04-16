@@ -11,6 +11,7 @@
 | 字段名 | 类型 | 说明 |
 | --- | --- | --- |
 | `experiment_id` | `string` | 实验唯一标识，建议可直接用于前端和 API 查询 |
+| `output_run_id` | `string \| null` | 每次运行的唯一输出后缀，用于区分同配置重复运行产生的文件 |
 | `model` | `string` | 当前模型名，例如 `MMFedRAP`、`FedRAP` |
 | `dataset` | `string` | 当前数据集 |
 | `attack_type` | `string \| null` | 当前攻击类型，未启用时可为空 |
@@ -368,15 +369,18 @@
 
 - `outputs/results/{model}/{dataset}/{type}/`
 
-文件名默认复用当前 `result_file_name` 的主名，再追加后缀。例如：
+文件名默认复用当前 `result_file_name` 的主名，再追加后缀。`result_file_name`
+现在会在可读前缀后追加每次运行唯一的 `output_run_id`，避免同配置重复运行时覆盖旧结果。例如：
 
-- `[FedRAP]-[KU]-[Contrast.attack_only].experiment_result.json`
-- `[FedRAP]-[KU]-[Contrast.attack_only].experiment_summary.json`
+- `[FedRAP]-[KU]-[Contrast.attack_only]-[20260416_201933_123456].experiment_result.json`
+- `[FedRAP]-[KU]-[Contrast.attack_only]-[20260416_201933_123456].experiment_summary.json`
 
 其中：
 
 - 详细版适合调试、研究和复盘，保留完整字段
 - 摘要版适合 API、前端和答辩展示，只保留轻量关键字段
+- 同一次实验的 CSV、详细版 JSON、摘要版 JSON 共享同一个 `output_run_id`
+- 历史实验页依赖唯一结果文件路径累积记录，因此新结果仍保留 `.experiment_summary.json` / `.experiment_result.json` 后缀供 API 扫描
 
 ## 统一非定向投毒结果字段
 

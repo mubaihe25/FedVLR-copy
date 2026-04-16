@@ -166,14 +166,33 @@ class Config(object):
             ),
         )
 
-        # set the result file name
-        self.final_config_dict["result_file_name"] = os.path.join(
-            self.final_config_dict["paths"]["save"],
-            "[{}]-[{}]-[{}.{}].csv".format(
+        # Each training run needs a stable unique suffix shared by CSV, detailed
+        # JSON, and summary JSON outputs. Without this suffix, repeated runs with
+        # the same model/dataset/type/comment overwrite previous result files.
+        output_run_id = (
+            self.final_config_dict.get("output_run_id")
+            or self.final_config_dict.get("run_id")
+            or datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        )
+        self.final_config_dict["output_run_id"] = str(output_run_id)
+        if not self.final_config_dict.get("experiment_id"):
+            self.final_config_dict["experiment_id"] = "{}-{}-{}-{}-{}".format(
                 self.final_config_dict["model"],
                 self.final_config_dict["dataset"],
                 self.final_config_dict["type"],
                 self.final_config_dict["comment"],
+                self.final_config_dict["output_run_id"],
+            )
+
+        # set the result file name
+        self.final_config_dict["result_file_name"] = os.path.join(
+            self.final_config_dict["paths"]["save"],
+            "[{}]-[{}]-[{}.{}]-[{}].csv".format(
+                self.final_config_dict["model"],
+                self.final_config_dict["dataset"],
+                self.final_config_dict["type"],
+                self.final_config_dict["comment"],
+                self.final_config_dict["output_run_id"],
             ),
         )
 

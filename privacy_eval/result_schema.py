@@ -133,6 +133,7 @@ def build_experiment_summary(result: ExperimentResult) -> Dict[str, Any]:
         "dataset": result.dataset,
         "experiment_mode": result.experiment_mode,
         "scenario_tags": list(result.scenario_tags),
+        "output_run_id": metadata.get("output_run_id"),
         "active_attacks": list(result.active_attacks),
         "active_defenses": list(result.active_defenses),
         "active_privacy_metrics": list(result.active_privacy_metrics),

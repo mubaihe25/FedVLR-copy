@@ -421,6 +421,14 @@
 - `*.experiment_result.json`
 - `*.experiment_summary.json`
 
+`result_file_name` 的主名现在包含每次运行唯一的 `output_run_id`，例如：
+
+- `[FedRAP]-[KU]-[Contrast.attack_only]-[20260416_201933_123456].csv`
+- `[FedRAP]-[KU]-[Contrast.attack_only]-[20260416_201933_123456].experiment_result.json`
+- `[FedRAP]-[KU]-[Contrast.attack_only]-[20260416_201933_123456].experiment_summary.json`
+
+这样同一配置重复运行时会生成新的 CSV、详细版 JSON 和摘要版 JSON，不再覆盖旧实验文件；API 仍然按既有后缀扫描结果目录。
+
 这样可以保持：
 
 - 详细版继续服务调试、研究和复盘
