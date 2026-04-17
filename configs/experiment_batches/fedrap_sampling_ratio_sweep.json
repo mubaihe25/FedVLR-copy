@@ -1,0 +1,51 @@
+{
+  "batch_name": "fedrap_sampling_ratio_sweep",
+  "description": "FedRAP on KU baseline sweep over federated client sampling ratios with fixed lr, l2_reg, and local epochs.",
+  "base_config": {
+    "model": "FedRAP",
+    "dataset": "KU",
+    "scenario": "baseline",
+    "type": "BaselineBatch",
+    "comment": "fedrap_ku_baseline_sampling_ratio_sweep",
+    "enabled_attacks": [],
+    "enabled_defenses": [],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": false,
+      "mode": "none",
+      "ratio": 0.0,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 30,
+      "local_epochs": 1,
+      "clients_sample_ratio": 1.0,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "lr": 0.001,
+      "l2_reg": 0.0001
+    },
+    "attack_params": {},
+    "defense_params": {},
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {
+    "training_params.clients_sample_ratio": [
+      {
+        "value": 0.5,
+        "label": "0p5"
+      },
+      {
+        "value": 0.8,
+        "label": "0p8"
+      },
+      {
+        "value": 1.0,
+        "label": "1p0"
+      }
+    ]
+  }
+}

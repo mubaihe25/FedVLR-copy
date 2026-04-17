@@ -1,0 +1,51 @@
+{
+  "batch_name": "fedrap_local_epochs_sweep",
+  "description": "FedRAP on KU baseline sweep over local client training epochs with fixed lr and l2_reg.",
+  "base_config": {
+    "model": "FedRAP",
+    "dataset": "KU",
+    "scenario": "baseline",
+    "type": "BaselineBatch",
+    "comment": "fedrap_ku_baseline_local_epochs_sweep",
+    "enabled_attacks": [],
+    "enabled_defenses": [],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": false,
+      "mode": "none",
+      "ratio": 0.0,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 30,
+      "local_epochs": 1,
+      "clients_sample_ratio": 1.0,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "lr": 0.001,
+      "l2_reg": 0.0001
+    },
+    "attack_params": {},
+    "defense_params": {},
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {
+    "training_params.local_epochs": [
+      {
+        "value": 1,
+        "label": "1"
+      },
+      {
+        "value": 2,
+        "label": "2"
+      },
+      {
+        "value": 5,
+        "label": "5"
+      }
+    ]
+  }
+}
