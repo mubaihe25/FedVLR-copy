@@ -66,6 +66,34 @@ def normalize_list(value: Any) -> List[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def normalize_training_params(training_params: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize unified training params into legacy keys consumed by trainers.
+
+    The project still has two naming layers: unified configs use concise fields
+    such as ``lr`` and ``l2_reg``, while the common optimizer path consumes
+    ``learning_rate`` and ``weight_decay``. Keep both aliases present so model-
+    specific trainers and generic trainers observe the same intended values.
+    """
+    normalized = dict(training_params or {})
+
+    if "lr" in normalized and "learning_rate" not in normalized:
+        normalized["learning_rate"] = normalized["lr"]
+    elif "learning_rate" in normalized and "lr" not in normalized:
+        normalized["lr"] = normalized["learning_rate"]
+
+    if "l2_reg" in normalized and "weight_decay" not in normalized:
+        normalized["weight_decay"] = normalized["l2_reg"]
+    elif "weight_decay" in normalized and "l2_reg" not in normalized:
+        normalized["l2_reg"] = normalized["weight_decay"]
+
+    if "learner" in normalized and "optimizer" not in normalized:
+        normalized["optimizer"] = normalized["learner"]
+    elif "optimizer" in normalized and "learner" not in normalized:
+        normalized["learner"] = normalized["optimizer"]
+
+    return normalized
+
+
 def get_model_record(capabilities: Dict[str, Any], model_name: str) -> Optional[Dict[str, Any]]:
     for item in capabilities.get("models", []):
         if str(item.get("name")) == model_name:
@@ -221,7 +249,7 @@ def build_fedvlr_config(
     defenses = normalize_list(unified_config.get("enabled_defenses", []))
     privacy_metrics = normalize_list(unified_config.get("enabled_privacy_metrics", []))
     malicious_config = unified_config.get("malicious_client_config") or {}
-    training_params = unified_config.get("training_params") or {}
+    training_params = normalize_training_params(unified_config.get("training_params") or {})
 
     flat_config: Dict[str, Any] = {
         "use_gpu": False,

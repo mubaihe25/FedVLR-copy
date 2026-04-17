@@ -62,6 +62,7 @@ class Config(object):
             config_dict = {}
         config_dict["model"] = model
         config_dict["dataset"] = dataset
+        self._normalize_external_training_aliases(config_dict)
         # model type
         self.final_config_dict = self._load_dataset_model_config(config_dict, mg)
         # config in cmd and main.py are latest
@@ -69,6 +70,29 @@ class Config(object):
 
         self._set_default_parameters()
         self._init_device()
+
+    def _normalize_external_training_aliases(self, config_dict):
+        """Mirror unified training fields to legacy trainer fields.
+
+        External callers, including the unified launcher and batch scripts, are
+        encouraged to provide ``lr`` and ``l2_reg``. Existing trainers still
+        consume ``learning_rate`` and ``weight_decay`` in several places, so we
+        add missing aliases before the final config merge.
+        """
+        if "lr" in config_dict and "learning_rate" not in config_dict:
+            config_dict["learning_rate"] = config_dict["lr"]
+        elif "learning_rate" in config_dict and "lr" not in config_dict:
+            config_dict["lr"] = config_dict["learning_rate"]
+
+        if "l2_reg" in config_dict and "weight_decay" not in config_dict:
+            config_dict["weight_decay"] = config_dict["l2_reg"]
+        elif "weight_decay" in config_dict and "l2_reg" not in config_dict:
+            config_dict["l2_reg"] = config_dict["weight_decay"]
+
+        if "learner" in config_dict and "optimizer" not in config_dict:
+            config_dict["optimizer"] = config_dict["learner"]
+        elif "optimizer" in config_dict and "learner" not in config_dict:
+            config_dict["learner"] = config_dict["optimizer"]
 
     def _load_dataset_model_config(self, config_dict, mg):
         file_config_dict = dict()

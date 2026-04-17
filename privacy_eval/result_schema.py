@@ -138,6 +138,7 @@ def build_experiment_summary(result: ExperimentResult) -> Dict[str, Any]:
         "active_defenses": list(result.active_defenses),
         "active_privacy_metrics": list(result.active_privacy_metrics),
         "attack_taxonomy": metadata.get("attack_taxonomy", {}),
+        "training_config": metadata.get("training_config", {}),
         "malicious_client_summary": metadata.get("malicious_client_summary", {}),
         "final_eval": asdict(result.final_eval),
         "round_summaries": [

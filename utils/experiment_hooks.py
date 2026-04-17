@@ -85,6 +85,7 @@ class ExperimentHookManager:
                 "comment": config.get("comment"),
                 "output_run_id": config.get("output_run_id"),
                 "result_file_name": config.get("result_file_name"),
+                "training_config": self._build_training_config_snapshot(),
             }
         )
 
@@ -139,6 +140,28 @@ class ExperimentHookManager:
                 "malicious_client_summary": self._build_malicious_client_summary(),
             }
         )
+
+    def _build_training_config_snapshot(self) -> Dict[str, Any]:
+        """Capture the effective training parameters for result traceability."""
+        keys = (
+            "lr",
+            "learning_rate",
+            "l2_reg",
+            "weight_decay",
+            "learner",
+            "optimizer",
+            "epochs",
+            "local_epochs",
+            "clients_sample_ratio",
+            "use_gpu",
+            "eval_step",
+            "collect_round_metrics",
+        )
+        snapshot = {key: self.config.get(key) for key in keys}
+        device = self.config.get("device")
+        if device is not None:
+            snapshot["device"] = str(device)
+        return snapshot
 
     def _normalize_module_names(self, names: Any) -> List[str]:
         if names is None:
