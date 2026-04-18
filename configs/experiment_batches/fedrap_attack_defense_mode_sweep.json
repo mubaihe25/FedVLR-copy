@@ -1,0 +1,64 @@
+{
+  "batch_name": "fedrap_attack_defense_mode_sweep",
+  "description": "FedRAP on KU low-epoch poisoning plus robust defense mode calibration.",
+  "base_config": {
+    "model": "FedRAP",
+    "dataset": "KU",
+    "scenario": "attack_and_defense_poisoning",
+    "type": "SecurityBatch",
+    "comment": "fedrap_ku_attack_defense_mode_sweep",
+    "enabled_attacks": ["poisoning_attack"],
+    "enabled_defenses": ["robust_defense"],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": true,
+      "mode": "ratio",
+      "ratio": 0.2,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 20,
+      "local_epochs": 1,
+      "clients_sample_ratio": 1.0,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "lr": 0.001,
+      "l2_reg": 0.0001
+    },
+    "attack_params": {
+      "poisoning_attack": {
+        "poisoning_enabled_substrategies": ["client_update_scale", "sign_flip", "model_replacement"],
+        "poisoning_mix_rule": "round_robin",
+        "poisoning_attack_scale": 2.0,
+        "poisoning_sign_flip_scale": 1.0,
+        "poisoning_replacement_scale": 5.0,
+        "poisoning_replacement_rule": "aligned_mean"
+      }
+    },
+    "defense_params": {
+      "robust_defense": {
+        "robust_defense_mode": "trimmed_mean",
+        "robust_clip_norm": 30.0,
+        "robust_trim_ratio": 0.2,
+        "robust_min_clients_for_trim": 5,
+        "robust_trim_rule": "coordinate_trimmed_mean"
+      }
+    },
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {
+    "defense_params.robust_defense.robust_defense_mode": [
+      {
+        "value": "trimmed_mean",
+        "label": "trimmed_mean"
+      },
+      {
+        "value": "clip_then_trimmed_mean",
+        "label": "clip_then_trimmed_mean"
+      }
+    ]
+  }
+}

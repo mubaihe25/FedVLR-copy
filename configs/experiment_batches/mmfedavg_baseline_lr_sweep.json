@@ -1,0 +1,47 @@
+{
+  "batch_name": "mmfedavg_baseline_lr_sweep",
+  "description": "MMFedAvg on KU baseline lightweight learning-rate sweep for multi-modal comparison.",
+  "base_config": {
+    "model": "MMFedAvg",
+    "dataset": "KU",
+    "scenario": "baseline",
+    "type": "BaselineBatch",
+    "comment": "mmfedavg_ku_baseline_lr_sweep",
+    "enabled_attacks": [],
+    "enabled_defenses": [],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": false,
+      "mode": "none",
+      "ratio": 0.0,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 30,
+      "local_epochs": 1,
+      "clients_sample_ratio": 1.0,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "lr": 0.001,
+      "l2_reg": 0.0001
+    },
+    "attack_params": {},
+    "defense_params": {},
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {
+    "training_params.lr": [
+      {
+        "value": 0.0005,
+        "label": "5e-4"
+      },
+      {
+        "value": 0.001,
+        "label": "1e-3"
+      }
+    ]
+  }
+}
