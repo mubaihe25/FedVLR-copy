@@ -358,6 +358,7 @@ def run_experiment(unified_config: Dict[str, Any], fedvlr_config: Dict[str, Any]
             csv_params,
             best_test_upon_valid or {},
             config["result_file_name"],
+            experiment_result_dict=trainer.experiment_result_dict,
         )
     except Exception as exc:  # noqa: BLE001 - CSV should not break the training output path.
         logging.getLogger().warning("CSV result export skipped: %s", exc)

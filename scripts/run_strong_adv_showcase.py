@@ -251,6 +251,7 @@ def run_single_scenario(scenario_spec: Dict[str, Any]) -> Dict[str, Any]:
             build_csv_params(config, scenario_spec),
             best_test_upon_valid or {},
             config["result_file_name"],
+            experiment_result_dict=trainer.experiment_result_dict,
         )
     except Exception as csv_error:
         logging.getLogger().warning("CSV result export skipped: %s", csv_error)

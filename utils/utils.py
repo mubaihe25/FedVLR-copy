@@ -372,8 +372,180 @@ def get_combinations(config, result_file):
     return comb_tuple, total_loops
 
 
+def _csv_safe_value(value):
+    """Convert nested values into stable CSV-friendly cells."""
+    import json
+
+    if isinstance(value, (dict, list, tuple, set)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return value
+
+
+def _normalize_metric_key(key):
+    return str(key).lower().replace("@", "").replace("_", "").replace("-", "")
+
+
+def _read_metric_value(source, metric_name, cutoff):
+    """Read metric values from dicts using keys like recall@50 or recall50."""
+    if not isinstance(source, dict):
+        return None
+
+    target = "{}{}".format(metric_name, cutoff)
+    for key, value in source.items():
+        if _normalize_metric_key(key) == target:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _nested_count_sum(metrics, field_names):
+    if not isinstance(metrics, dict):
+        return 0
+
+    total = 0
+    for value in metrics.values():
+        if not isinstance(value, dict):
+            continue
+        for field_name in field_names:
+            raw_value = value.get(field_name)
+            if raw_value is None:
+                continue
+            try:
+                total += int(raw_value)
+                break
+            except (TypeError, ValueError):
+                continue
+    return total
+
+
+def _round_metric_payload(round_metric):
+    if not isinstance(round_metric, dict):
+        return {}
+    extra = round_metric.get("extra") if isinstance(round_metric.get("extra"), dict) else {}
+    valid_result = (
+        extra.get("valid_result")
+        if isinstance(extra.get("valid_result"), dict)
+        else round_metric.get("valid_result")
+    )
+    test_result = (
+        extra.get("test_result")
+        if isinstance(extra.get("test_result"), dict)
+        else round_metric.get("test_result")
+    )
+    attack_metrics = extra.get("attack_metrics") if isinstance(extra.get("attack_metrics"), dict) else {}
+    defense_metrics = extra.get("defense_metrics") if isinstance(extra.get("defense_metrics"), dict) else {}
+
+    return {
+        "round_index": round_metric.get("round_index") or round_metric.get("round_id"),
+        "round_id": round_metric.get("round_id") or round_metric.get("round_index"),
+        "train_loss": (
+            round_metric.get("train_loss")
+            if round_metric.get("train_loss") is not None
+            else round_metric.get("avg_train_loss")
+        ),
+        "valid_score": round_metric.get("valid_score"),
+        "test_score": round_metric.get("test_score"),
+        "valid_recall50": _read_metric_value(valid_result, "recall", 50),
+        "valid_ndcg50": _read_metric_value(valid_result, "ndcg", 50),
+        "test_recall50": _read_metric_value(test_result, "recall", 50),
+        "test_ndcg50": _read_metric_value(test_result, "ndcg", 50),
+        "participant_count": (
+            round_metric.get("participant_count")
+            if round_metric.get("participant_count") is not None
+            else round_metric.get("num_participants")
+        ),
+        "malicious_client_count": round_metric.get("malicious_client_count"),
+        "attacked_client_count": _nested_count_sum(
+            attack_metrics, ("attacked_client_count", "poisoned_client_count")
+        ),
+        "clipped_client_count": _nested_count_sum(
+            defense_metrics, ("clipped_client_count", "total_clipped_clients")
+        ),
+        "filtered_client_count": _nested_count_sum(
+            defense_metrics, ("filtered_client_count", "total_filtered_clients")
+        ),
+    }
+
+
+def _best_metric(rows, field_name):
+    candidates = []
+    for row in rows:
+        value = row.get(field_name)
+        if value is None or value == "":
+            continue
+        try:
+            candidates.append((float(value), row.get("round_index")))
+        except (TypeError, ValueError):
+            continue
+    if not candidates:
+        return None, None
+    return max(candidates, key=lambda item: item[0])
+
+
+def _build_round_csv_rows(param_dict, round_metrics):
+    rows = []
+    base_params = {key: _csv_safe_value(value) for key, value in param_dict.items()}
+    for round_metric in round_metrics or []:
+        payload = _round_metric_payload(round_metric)
+        rows.append(
+            {
+                **base_params,
+                "row_type": "round",
+                "best_source": "",
+                "best_recall50": "",
+                "best_ndcg50": "",
+                "best_round_for_recall50": "",
+                "best_round_for_ndcg50": "",
+                **payload,
+            }
+        )
+
+    if not rows:
+        return []
+
+    test_recall, test_recall_round = _best_metric(rows, "test_recall50")
+    test_ndcg, test_ndcg_round = _best_metric(rows, "test_ndcg50")
+    valid_recall, valid_recall_round = _best_metric(rows, "valid_recall50")
+    valid_ndcg, valid_ndcg_round = _best_metric(rows, "valid_ndcg50")
+
+    has_test_metrics = test_recall is not None or test_ndcg is not None
+    best_source = "test" if has_test_metrics else "valid"
+    rows.append(
+        {
+            **base_params,
+            "row_type": "best_summary",
+            "round_index": "",
+            "round_id": "",
+            "train_loss": "",
+            "valid_score": "",
+            "test_score": "",
+            "valid_recall50": "",
+            "valid_ndcg50": "",
+            "test_recall50": "",
+            "test_ndcg50": "",
+            "participant_count": "",
+            "malicious_client_count": "",
+            "attacked_client_count": "",
+            "clipped_client_count": "",
+            "filtered_client_count": "",
+            "best_source": best_source,
+            "best_recall50": test_recall if has_test_metrics else valid_recall,
+            "best_ndcg50": test_ndcg if has_test_metrics else valid_ndcg,
+            "best_round_for_recall50": test_recall_round if has_test_metrics else valid_recall_round,
+            "best_round_for_ndcg50": test_ndcg_round if has_test_metrics else valid_ndcg_round,
+        }
+    )
+    return rows
+
+
 def save_experiment_results(
-    param_dict, result_dict, csv_filename="experiment_results.csv"
+    param_dict,
+    result_dict,
+    csv_filename="experiment_results.csv",
+    round_metrics=None,
+    experiment_result_dict=None,
 ):
     """保存实验结果到CSV文件
 
@@ -385,8 +557,30 @@ def save_experiment_results(
     import os
     import pandas as pd
 
+    if round_metrics is None and isinstance(experiment_result_dict, dict):
+        round_metrics = experiment_result_dict.get("round_metrics")
+
+    round_rows = _build_round_csv_rows(param_dict, round_metrics)
+    if round_rows:
+        os.makedirs(os.path.dirname(csv_filename) or ".", exist_ok=True)
+        new_df = pd.DataFrame(round_rows)
+        try:
+            existing_df = pd.read_csv(csv_filename)
+        except FileNotFoundError:
+            existing_df = pd.DataFrame()
+        df = (
+            pd.concat([existing_df, new_df], ignore_index=True)
+            if not existing_df.empty
+            else new_df
+        )
+        df.to_csv(csv_filename, index=False)
+        return
+
     # 合并参数和实验结果为一条记录
-    record = {**param_dict, **result_dict}
+    record = {
+        **{key: _csv_safe_value(value) for key, value in param_dict.items()},
+        **{key: _csv_safe_value(value) for key, value in result_dict.items()},
+    }
 
     # 尝试读取现有的CSV文件，如果文件不存在，则创建一个新的DataFrame
     try:

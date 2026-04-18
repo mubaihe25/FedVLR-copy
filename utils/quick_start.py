@@ -268,7 +268,10 @@ def _train_and_evaluate(
 
             # 保存当前超参数组合的结果
             save_experiment_results(
-                hyper_dict, best_test_upon_valid, config["result_file_name"]
+                hyper_dict,
+                best_test_upon_valid,
+                config["result_file_name"],
+                experiment_result_dict=getattr(trainer, "experiment_result_dict", None),
             )
             logger.info(f'Results saved to {config["result_file_name"]}')
 
