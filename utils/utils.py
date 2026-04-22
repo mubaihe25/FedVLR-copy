@@ -484,6 +484,97 @@ def _best_metric(rows, field_name):
     return max(candidates, key=lambda item: item[0])
 
 
+def _tail_window_size(total_rounds):
+    if total_rounds <= 0:
+        return 0
+    if total_rounds >= 100:
+        return min(20, total_rounds)
+    return max(1, int(np.ceil(total_rounds * 0.2)))
+
+
+def _mean_metric(rows, field_name):
+    values = []
+    for row in rows:
+        value = row.get(field_name)
+        if value is None or value == "":
+            continue
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _has_metric(rows, field_names):
+    for row in rows:
+        for field_name in field_names:
+            value = row.get(field_name)
+            if value is None or value == "":
+                continue
+            try:
+                float(value)
+                return True
+            except (TypeError, ValueError):
+                continue
+    return False
+
+
+def _tail_mean_summary(rows, base_params):
+    round_rows = [row for row in rows if row.get("row_type") == "round"]
+    window_size = _tail_window_size(len(round_rows))
+    tail_rows = round_rows[-window_size:] if window_size else []
+    has_test_metrics = _has_metric(tail_rows, ("test_recall50", "test_ndcg50"))
+    tail_source = "test" if has_test_metrics else "valid"
+
+    tail_test_recall = _mean_metric(tail_rows, "test_recall50")
+    tail_test_ndcg = _mean_metric(tail_rows, "test_ndcg50")
+    tail_valid_recall = _mean_metric(tail_rows, "valid_recall50")
+    tail_valid_ndcg = _mean_metric(tail_rows, "valid_ndcg50")
+
+    if tail_source == "test":
+        tail_recall = tail_test_recall
+        tail_ndcg = tail_test_ndcg
+    else:
+        tail_recall = tail_valid_recall
+        tail_ndcg = tail_valid_ndcg
+
+    return {
+        **base_params,
+        "row_type": "tail_mean_summary",
+        "round_index": "",
+        "round_id": "",
+        "train_loss": "",
+        "valid_score": "",
+        "test_score": "",
+        "valid_recall50": "",
+        "valid_ndcg50": "",
+        "test_recall50": "",
+        "test_ndcg50": "",
+        "participant_count": "",
+        "malicious_client_count": "",
+        "attacked_client_count": "",
+        "clipped_client_count": "",
+        "filtered_client_count": "",
+        "best_source": "",
+        "best_recall50": "",
+        "best_ndcg50": "",
+        "best_round_for_recall50": "",
+        "best_round_for_ndcg50": "",
+        "tail_source": tail_source,
+        "tail_window_size": window_size,
+        "tail_recall50": tail_recall,
+        "tail_ndcg50": tail_ndcg,
+        "tail_start_round": tail_rows[0].get("round_index") if tail_rows else "",
+        "tail_end_round": tail_rows[-1].get("round_index") if tail_rows else "",
+        "tail_valid_recall50": tail_valid_recall,
+        "tail_valid_ndcg50": tail_valid_ndcg,
+        "tail_test_recall50": tail_test_recall,
+        "tail_test_ndcg50": tail_test_ndcg,
+    }
+
+
 def _build_round_csv_rows(param_dict, round_metrics):
     rows = []
     base_params = {key: _csv_safe_value(value) for key, value in param_dict.items()}
@@ -498,6 +589,16 @@ def _build_round_csv_rows(param_dict, round_metrics):
                 "best_ndcg50": "",
                 "best_round_for_recall50": "",
                 "best_round_for_ndcg50": "",
+                "tail_source": "",
+                "tail_window_size": "",
+                "tail_recall50": "",
+                "tail_ndcg50": "",
+                "tail_start_round": "",
+                "tail_end_round": "",
+                "tail_valid_recall50": "",
+                "tail_valid_ndcg50": "",
+                "tail_test_recall50": "",
+                "tail_test_ndcg50": "",
                 **payload,
             }
         )
@@ -535,8 +636,19 @@ def _build_round_csv_rows(param_dict, round_metrics):
             "best_ndcg50": test_ndcg if has_test_metrics else valid_ndcg,
             "best_round_for_recall50": test_recall_round if has_test_metrics else valid_recall_round,
             "best_round_for_ndcg50": test_ndcg_round if has_test_metrics else valid_ndcg_round,
+            "tail_source": "",
+            "tail_window_size": "",
+            "tail_recall50": "",
+            "tail_ndcg50": "",
+            "tail_start_round": "",
+            "tail_end_round": "",
+            "tail_valid_recall50": "",
+            "tail_valid_ndcg50": "",
+            "tail_test_recall50": "",
+            "tail_test_ndcg50": "",
         }
     )
+    rows.append(_tail_mean_summary(rows, base_params))
     return rows
 
 
