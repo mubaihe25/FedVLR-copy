@@ -1,0 +1,53 @@
+{
+  "batch_name": "mmfedrap_stability_rescue",
+  "description": "MMFedRAP KU baseline 100-round stability rescue sweep using tail-mean metrics.",
+  "base_config": {
+    "model": "MMFedRAP",
+    "dataset": "KU",
+    "scenario": "baseline",
+    "type": "RescueBatch",
+    "comment": "mmfedrap_ku_stability_rescue",
+    "enabled_attacks": [],
+    "enabled_defenses": [],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": false,
+      "mode": "none",
+      "ratio": 0.0,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 100,
+      "local_epochs": 1,
+      "clients_sample_ratio": 0.8,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "early_stop": false,
+      "stopping_step": 100000,
+      "tol": 0.0,
+      "lr": 0.0002,
+      "l2_reg": 0.001
+    },
+    "attack_params": {},
+    "defense_params": {},
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {
+    "training_params.lr": [
+      { "value": 0.0001, "label": "lr1e-4" },
+      { "value": 0.0002, "label": "lr2e-4" },
+      { "value": 0.0005, "label": "lr5e-4" }
+    ],
+    "training_params.l2_reg": [
+      { "value": 0.001, "label": "l2_1e-3" },
+      { "value": 0.005, "label": "l2_5e-3" }
+    ],
+    "training_params.clients_sample_ratio": [
+      { "value": 0.5, "label": "sample0p5" },
+      { "value": 0.8, "label": "sample0p8" }
+    ]
+  }
+}

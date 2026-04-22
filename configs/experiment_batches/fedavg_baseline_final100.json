@@ -1,0 +1,39 @@
+{
+  "batch_name": "fedavg_baseline_final100",
+  "description": "FedAvg KU baseline final 100-round run for single-modal baseline comparison.",
+  "base_config": {
+    "model": "FedAvg",
+    "dataset": "KU",
+    "scenario": "baseline",
+    "type": "Final100",
+    "comment": "fedavg_ku_baseline_final100",
+    "enabled_attacks": [],
+    "enabled_defenses": [],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": false,
+      "mode": "none",
+      "ratio": 0.0,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 100,
+      "local_epochs": 1,
+      "clients_sample_ratio": 1.0,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "early_stop": false,
+      "stopping_step": 100000,
+      "tol": 0.0,
+      "lr": 0.0005,
+      "l2_reg": 0.0001
+    },
+    "attack_params": {},
+    "defense_params": {},
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {}
+}

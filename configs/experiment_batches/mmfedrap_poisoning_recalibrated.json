@@ -1,0 +1,48 @@
+{
+  "batch_name": "mmfedrap_poisoning_recalibrated",
+  "description": "MMFedRAP KU 60-round poisoning migration using selected stable baseline and FedRAP recalibrated attack setup.",
+  "base_config": {
+    "model": "MMFedRAP",
+    "dataset": "KU",
+    "scenario": "attack_only_poisoning",
+    "type": "RecalibrationBatch",
+    "comment": "mmfedrap_ku_poisoning_recalibrated",
+    "enabled_attacks": ["poisoning_attack"],
+    "enabled_defenses": [],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": true,
+      "mode": "ratio",
+      "ratio": 0.3,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 60,
+      "local_epochs": 1,
+      "clients_sample_ratio": 0.8,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "early_stop": false,
+      "stopping_step": 100000,
+      "tol": 0.0,
+      "lr": 0.0005,
+      "l2_reg": 0.001
+    },
+    "attack_params": {
+      "poisoning_attack": {
+        "poisoning_enabled_substrategies": ["client_update_scale", "sign_flip", "model_replacement"],
+        "poisoning_mix_rule": "round_robin",
+        "poisoning_attack_scale": 4.0,
+        "poisoning_sign_flip_scale": 1.0,
+        "poisoning_replacement_scale": 5.0,
+        "poisoning_replacement_rule": "aligned_mean"
+      }
+    },
+    "defense_params": {},
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {}
+}

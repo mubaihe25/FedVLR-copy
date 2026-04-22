@@ -1,0 +1,56 @@
+{
+  "batch_name": "mmfedrap_attack_defense_recalibrated",
+  "description": "MMFedRAP KU 60-round attack-defense migration using selected stable baseline, poisoning setup, and trimmed-mean robust defense.",
+  "base_config": {
+    "model": "MMFedRAP",
+    "dataset": "KU",
+    "scenario": "attack_and_defense_poisoning",
+    "type": "RecalibrationBatch",
+    "comment": "mmfedrap_ku_attack_defense_recalibrated",
+    "enabled_attacks": ["poisoning_attack"],
+    "enabled_defenses": ["robust_defense"],
+    "enabled_privacy_metrics": [],
+    "malicious_client_config": {
+      "enabled": true,
+      "mode": "ratio",
+      "ratio": 0.3,
+      "client_ids": []
+    },
+    "training_params": {
+      "epochs": 60,
+      "local_epochs": 1,
+      "clients_sample_ratio": 0.8,
+      "learner": "adam",
+      "use_gpu": true,
+      "eval_step": 1,
+      "collect_round_metrics": true,
+      "early_stop": false,
+      "stopping_step": 100000,
+      "tol": 0.0,
+      "lr": 0.0005,
+      "l2_reg": 0.001
+    },
+    "attack_params": {
+      "poisoning_attack": {
+        "poisoning_enabled_substrategies": ["client_update_scale", "sign_flip", "model_replacement"],
+        "poisoning_mix_rule": "round_robin",
+        "poisoning_attack_scale": 4.0,
+        "poisoning_sign_flip_scale": 1.0,
+        "poisoning_replacement_scale": 5.0,
+        "poisoning_replacement_rule": "aligned_mean"
+      }
+    },
+    "defense_params": {
+      "robust_defense": {
+        "robust_defense_mode": "trimmed_mean",
+        "robust_clip_norm": 30.0,
+        "robust_trim_ratio": 0.2,
+        "robust_min_clients_for_trim": 5,
+        "robust_trim_rule": "coordinate_trimmed_mean"
+      }
+    },
+    "privacy_params": {},
+    "extra_config": {}
+  },
+  "sweep_params": {}
+}
