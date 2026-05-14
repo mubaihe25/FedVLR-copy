@@ -13,7 +13,7 @@
 - `defenses`：范数裁剪、更新过滤、截尾均值、Median、Krum、central DP-style noise、鲁棒防御入口和异常检测模块。
 - `privacy_eval`：风险观测、成员推断 probe、梯度泄露 demo probe 和隐私相关指标输出。
 - `configs`：模型、数据集、能力矩阵、统一实验 schema 和 batch 配置。
-- `scripts`：实验启动、batch 运行、结果汇总和验证脚本。
+- `scripts`：实验启动、batch 运行、结果汇总、showcase artifact 导出和验证脚本。
 - `outputs`：实验输出目录；普通输出不要提交，已有 curated 展示结果不要自动删除。
 
 ## 开发约束
@@ -27,6 +27,7 @@
 - 不要提交普通 `outputs` 实验结果、`.venv`、`__pycache__`、`.pyc`、日志或临时文件。
 - `outputs` 中已有被 Git 跟踪的 curated 展示结果不能自动删除。
 - 不要默认运行耗时训练；需要训练时先明确轮数、模型、数据集和输出用途。
+- `scripts/export_showcase_artifacts.py` 只能汇总已有结果文件并生成展示 artifact，不应修改训练主链路、TopK 字段、CSV/JSON 既有字段或 API 协议。
 
 ## 指标口径
 

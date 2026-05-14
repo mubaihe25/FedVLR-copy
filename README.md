@@ -39,7 +39,7 @@ configs/       模型/数据集配置、能力矩阵、统一实验 schema、bat
 defenses/      范数裁剪、更新过滤、截尾均值、Median、Krum、central DP-style noise、鲁棒防御入口
 models/        推荐模型和多模态推荐模型
 privacy_eval/  风险观测、成员推断 probe、梯度泄露 demo probe 和隐私相关指标
-scripts/       启动、batch、验证和汇总脚本
+scripts/       启动、batch、验证、结果汇总和 showcase artifact 导出脚本
 utils/         配置、数据加载、评估、联邦训练和结果输出
 outputs/       实验输出目录；普通输出不要提交
 ```
@@ -77,6 +77,12 @@ python scripts/launch_experiment.py --config path\to\experiment.json --validate-
 ```
 
 涉及配置映射时先使用 validate-only 或 dry-run。不要在未明确模型、数据集、轮数和输出用途时默认运行耗时训练。
+
+已有实验结果可用轻量导出脚本整理为展示 artifact；该脚本只读取现有 `experiment_result` / `experiment_summary` / round CSV / TopK 文件，不运行训练：
+
+```powershell
+python scripts/export_showcase_artifacts.py --result-dir path\to\result --output-dir path\to\artifacts
+```
 
 ## 指标口径
 
