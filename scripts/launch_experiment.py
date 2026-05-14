@@ -13,13 +13,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-from utils.configurator import Config
-from utils.logger import init_logger
-from utils.quick_start import _prepare_data
-from utils.utils import get_model, get_trainer, init_seed, save_experiment_results
-
-
 CAPABILITY_PATH = ROOT / "configs" / "model_attack_defense_capabilities.json"
+TOPK_EXPORT_KEYS = (
+    "save_recommended_topk",
+    "save_recommend_topk",
+    "output_topk",
+    "topk_export",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,7 +91,28 @@ def normalize_training_params(training_params: Dict[str, Any]) -> Dict[str, Any]
     elif "optimizer" in normalized and "learner" not in normalized:
         normalized["learner"] = normalized["optimizer"]
 
+    for alias in ("save_recommend_topk", "output_topk", "topk_export"):
+        if alias in normalized and "save_recommended_topk" not in normalized:
+            normalized["save_recommended_topk"] = normalized[alias]
+
     return normalized
+
+
+def as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def explicit_topk_export_setting(config: Dict[str, Any]) -> Optional[bool]:
+    for key in TOPK_EXPORT_KEYS:
+        if key in config:
+            return as_bool(config[key])
+    return None
 
 
 def get_model_record(capabilities: Dict[str, Any], model_name: str) -> Optional[Dict[str, Any]]:
@@ -239,6 +260,54 @@ def merge_module_params(
         flat_config.update(module_params)
 
 
+def configure_recommend_topk_output(
+    config: Config,
+    requested_config: Dict[str, Any],
+) -> Optional[str]:
+    """Configure run-scoped TopK export for explicit launcher requests.
+
+    The legacy evaluator only writes recommendations when called with
+    ``is_test=True`` and ``save_recommended_topk`` enabled. The launcher keeps
+    normal training behavior unchanged by doing a post-fit export only when a
+    unified config explicitly opts in.
+    """
+    export_setting = explicit_topk_export_setting(requested_config)
+    if export_setting is None:
+        return None
+
+    config["save_recommended_topk"] = export_setting
+    if not export_setting:
+        return None
+
+    result_file = Path(config["result_file_name"])
+    explicit_dir = requested_config.get("recommend_topk")
+    if explicit_dir:
+        topk_dir = Path(str(explicit_dir))
+        if not topk_dir.is_absolute():
+            topk_dir = result_file.parent / topk_dir
+    else:
+        topk_dir = result_file.parent / "recommend_topk" / result_file.stem
+
+    topk_dir.mkdir(parents=True, exist_ok=True)
+    config["recommend_topk"] = str(topk_dir)
+    return str(topk_dir)
+
+
+def export_recommend_topk_after_fit(
+    trainer: Any,
+    test_data: Any,
+    topk_dir: Optional[str],
+    output_run_id: Any,
+) -> None:
+    if not topk_dir or test_data is None:
+        return
+    try:
+        trainer.evaluate(test_data, is_test=True, idx=output_run_id or "final")
+        logging.getLogger().info("TopK recommendation export saved under %s", topk_dir)
+    except Exception as exc:  # noqa: BLE001 - TopK export must not break training results.
+        logging.getLogger().warning("TopK recommendation export skipped: %s", exc)
+
+
 def build_fedvlr_config(
     unified_config: Dict[str, Any],
     capabilities: Dict[str, Any],
@@ -331,12 +400,18 @@ def build_csv_params(unified_config: Dict[str, Any], fedvlr_config: Dict[str, An
 
 
 def run_experiment(unified_config: Dict[str, Any], fedvlr_config: Dict[str, Any]) -> Dict[str, Any]:
+    from utils.configurator import Config
+    from utils.logger import init_logger
+    from utils.quick_start import _prepare_data
+    from utils.utils import get_model, get_trainer, init_seed, save_experiment_results
+
     config = Config(
         model=unified_config["model"],
         dataset=unified_config["dataset"],
         config_dict=fedvlr_config,
         mg=False,
     )
+    recommend_topk_dir = configure_recommend_topk_output(config, fedvlr_config)
     reset_logging()
     init_logger(config)
     init_seed(config["seed"])
@@ -349,6 +424,12 @@ def run_experiment(unified_config: Dict[str, Any], fedvlr_config: Dict[str, Any]
         valid_data=valid_data,
         test_data=test_data,
         saved=False,
+    )
+    export_recommend_topk_after_fit(
+        trainer,
+        test_data,
+        recommend_topk_dir,
+        config["output_run_id"],
     )
 
     try:
@@ -373,6 +454,7 @@ def run_experiment(unified_config: Dict[str, Any], fedvlr_config: Dict[str, Any]
         "summary_path": output_paths["experiment_summary_json"],
         "result_path": output_paths["experiment_result_json"],
         "csv_path": output_paths["csv"],
+        "recommend_topk_dir": recommend_topk_dir,
         "experiment_mode": trainer.experiment_summary_dict.get("experiment_mode"),
         "scenario_tags": trainer.experiment_summary_dict.get("scenario_tags", []),
         "active_attacks": trainer.experiment_summary_dict.get("active_attacks", []),

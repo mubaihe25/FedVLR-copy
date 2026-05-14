@@ -1,8 +1,6 @@
 """Privacy evaluation skeletons for the FedVLR project."""
 
 from privacy_eval.base_metric import BasePrivacyMetric
-from privacy_eval.client_update_norm_metric import ClientUpdateNormMetric
-from privacy_eval.gradient_leakage_probe import GradientLeakageProbe
 from privacy_eval.membership_inference_probe import MembershipInferenceProbe
 from privacy_eval.noop_metric import NoOpPrivacyMetric
 from privacy_eval.registry import (
@@ -16,6 +14,20 @@ from privacy_eval.result_schema import (
     RoundMetric,
     build_empty_result,
 )
+
+try:
+    from privacy_eval.client_update_norm_metric import ClientUpdateNormMetric
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    ClientUpdateNormMetric = None  # type: ignore[assignment]
+
+try:
+    from privacy_eval.gradient_leakage_probe import GradientLeakageProbe
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    GradientLeakageProbe = None  # type: ignore[assignment]
 
 __all__ = [
     "BasePrivacyMetric",

@@ -25,6 +25,12 @@ ARTIFACT_NAMES = {
     "showcase_manifest": "showcase_manifest.json",
 }
 
+PRIVACY_SIDECAR_PATTERNS = (
+    "membership_inference*.json",
+    "privacy_attack_summaries*.json",
+    "privacy_risk_summary*.json",
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -278,6 +284,7 @@ class ExperimentBundle:
         self.summary = read_json(self.summary_path)
         self.result = read_json(self.result_path)
         self.csv_rows = read_csv_rows(self.csv_path)
+        self.sidecar_json = self._read_sidecar_json()
 
     @property
     def exists(self) -> bool:
@@ -286,6 +293,26 @@ class ExperimentBundle:
     @property
     def sources(self) -> List[Any]:
         return [self.summary, self.result]
+
+    def _read_sidecar_json(self) -> List[Any]:
+        if self.result_dir is None or not self.result_dir.exists():
+            return []
+        sidecars: List[Path] = []
+        for pattern in PRIVACY_SIDECAR_PATTERNS:
+            sidecars.extend(self.result_dir.rglob(pattern))
+        sidecars = [
+            path
+            for path in dict.fromkeys(sidecars)
+            if path.is_file()
+            and ".experiment_result" not in path.name
+            and ".experiment_summary" not in path.name
+        ]
+        payloads = []
+        for path in sorted(sidecars, key=lambda item: item.stat().st_mtime, reverse=True):
+            payload = read_json(path)
+            if payload:
+                payloads.append(payload)
+        return payloads
 
     def source_dir_string(self) -> Optional[str]:
         return str(self.result_dir.resolve()) if self.result_dir is not None else None
@@ -545,6 +572,92 @@ def find_topk_file(result_dir: Optional[Path]) -> Optional[Path]:
     return newest_file(unique_candidates)
 
 
+def first_row_value(row: Dict[str, str], keys: Sequence[str]) -> Optional[str]:
+    for key in keys:
+        if key in row and row.get(key) not in (None, ""):
+            return row.get(key)
+    normalized_keys = {normalize_key(key): key for key in row.keys()}
+    for key in keys:
+        original_key = normalized_keys.get(normalize_key(key))
+        if original_key and row.get(original_key) not in (None, ""):
+            return row.get(original_key)
+    return None
+
+
+def to_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def score_for_top_column(row: Dict[str, str], column: str, zero_based_rank: int) -> Optional[float]:
+    score_key_candidates = [
+        "{}_score".format(column),
+        "score_{}".format(zero_based_rank),
+        "top_{}_score".format(zero_based_rank),
+        "top{}_score".format(zero_based_rank),
+    ]
+    return to_float(first_row_value(row, score_key_candidates))
+
+
+def is_top_item_column(key: str) -> bool:
+    normalized = normalize_key(key)
+    return normalized.startswith("top") and normalized[3:].isdigit()
+
+
+def parse_long_recommendations(rows: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    recommendations: List[Dict[str, Any]] = []
+    item_keys = ("item_id", "item", "recommended_item", "recommended_item_id")
+    user_keys = ("user_id", "client_id", "id")
+    for index, row in enumerate(rows, start=1):
+        item_id = first_row_value(row, item_keys)
+        if item_id is None:
+            continue
+        rank = to_int(first_row_value(row, ("rank", "position", "top_rank"))) or index
+        recommendations.append(
+            {
+                "rank": rank,
+                "item_id": str(item_id),
+                "score": to_float(
+                    first_row_value(row, ("score", "pred_score", "prediction_score", "rank_score"))
+                ),
+                "title": first_row_value(row, ("title", "item_title", "name")),
+                "reason": first_row_value(row, ("reason", "explanation")),
+                "status": first_row_value(row, ("status",)) or "unknown",
+                "client_id": first_row_value(row, user_keys),
+            }
+        )
+    return sorted(recommendations, key=lambda item: item.get("rank") or 0)
+
+
+def parse_wide_topk_recommendations(row: Dict[str, str]) -> List[Dict[str, Any]]:
+    top_columns = sorted(
+        [key for key in row.keys() if is_top_item_column(key)],
+        key=lambda key: int(normalize_key(key)[3:] or "0"),
+    )
+    recommendations: List[Dict[str, Any]] = []
+    client_id = first_row_value(row, ("user_id", "client_id", "id"))
+    for rank, column in enumerate(top_columns, start=1):
+        item_id = row.get(column)
+        if item_id is None or item_id == "":
+            continue
+        recommendations.append(
+            {
+                "rank": rank,
+                "item_id": str(item_id),
+                "score": score_for_top_column(row, column, rank - 1),
+                "title": None,
+                "reason": None,
+                "status": "unknown",
+                "client_id": client_id,
+            }
+        )
+    return recommendations
+
+
 def read_recommendations(bundle: Optional[ExperimentBundle]) -> Tuple[List[Dict[str, Any]], List[str]]:
     if bundle is None:
         return [], ["result directory not provided"]
@@ -558,26 +671,11 @@ def read_recommendations(bundle: Optional[ExperimentBundle]) -> Tuple[List[Dict[
     if not rows:
         return [], ["TopK recommendation file could not be parsed: {}".format(topk_path)]
 
-    row = rows[0]
-    top_columns = sorted(
-        [key for key in row.keys() if normalize_key(key).startswith("top")],
-        key=lambda key: int(re.sub(r"\D", "", key) or "0"),
-    )
-    recommendations: List[Dict[str, Any]] = []
-    for rank, column in enumerate(top_columns, start=1):
-        item_id = row.get(column)
-        if item_id is None or item_id == "":
-            continue
-        recommendations.append(
-            {
-                "rank": rank,
-                "item_id": str(item_id),
-                "score": None,
-                "title": None,
-                "reason": None,
-                "status": "unknown",
-            }
-        )
+    recommendations = parse_long_recommendations(rows)
+    if not recommendations:
+        recommendations = parse_wide_topk_recommendations(rows[0])
+    if not recommendations:
+        return [], ["TopK recommendation file has no readable recommendation rows: {}".format(topk_path)]
     return recommendations, []
 
 
@@ -653,7 +751,7 @@ def extract_recommendation_comparison(
         "baseline_recommendations": baseline,
         "attacked_recommendations": attack,
         "defended_recommendations": defense,
-        "note": "TopK files contain item ids only; score/title/reason are null unless future exporters add them.",
+        "note": "TopK files are read as long-form rows when item_id/rank/score exist, or as legacy wide top_N rows with null scores.",
         "warnings": warnings,
     }
 
@@ -785,6 +883,7 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
     sources: List[Any] = []
     if bundle is not None:
         sources.extend([bundle.result, bundle.summary])
+        sources.extend(bundle.sidecar_json)
         for source in (bundle.result, bundle.summary):
             if isinstance(source, dict):
                 metadata = source.get("metadata", {})

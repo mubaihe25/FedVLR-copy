@@ -84,6 +84,14 @@ python scripts/launch_experiment.py --config path\to\experiment.json --validate-
 python scripts/export_showcase_artifacts.py --result-dir path\to\result --output-dir path\to\artifacts
 ```
 
+通过 `scripts/launch_experiment.py` 启动的后续实验，可以在 `training_params` 中显式设置 `save_recommended_topk: true`（或兼容别名 `output_topk` / `save_recommend_topk` / `topk_export`），训练结束后会额外做一次测试集 TopK 推荐导出并写入本次结果目录下的 `recommend_topk/`。该导出不改变已有 TopK 宽表字段。
+
+如果已有推荐文件包含真实 membership label 和 score/rank，可用轻量 runner 生成成员推断 probe summary；只有 legacy `top_0 ... top_k` item id 而没有 label/score 时会输出 `not_available`，不会伪造隐私攻击数值：
+
+```powershell
+python -m privacy_eval.run_membership_probe_from_recommendations --recommendation-dir path\to\recommend_topk --output-json path\to\membership_inference_summary.json
+```
+
 ## 指标口径
 
 当前比赛展示优先使用：

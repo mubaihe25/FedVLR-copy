@@ -28,6 +28,8 @@
 - `outputs` 中已有被 Git 跟踪的 curated 展示结果不能自动删除。
 - 不要默认运行耗时训练；需要训练时先明确轮数、模型、数据集和输出用途。
 - `scripts/export_showcase_artifacts.py` 只能汇总已有结果文件并生成展示 artifact，不应修改训练主链路、TopK 字段、CSV/JSON 既有字段或 API 协议。
+- 后续实验如需真实推荐展示数据，优先通过 launcher 的 `training_params.save_recommended_topk: true` 或兼容别名启用测试集 TopK 导出；导出目录应落在本次结果目录下的 `recommend_topk/`。
+- `privacy_eval.run_membership_probe_from_recommendations` 只能基于已有推荐文件中的真实 membership label 与 score/rank 生成 summary；输入不足时输出 `not_available`，不要编造成员推断结果。
 
 ## 指标口径
 

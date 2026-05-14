@@ -94,6 +94,10 @@ class Config(object):
         elif "optimizer" in config_dict and "learner" not in config_dict:
             config_dict["learner"] = config_dict["optimizer"]
 
+        for alias in ("save_recommend_topk", "output_topk", "topk_export"):
+            if alias in config_dict and "save_recommended_topk" not in config_dict:
+                config_dict["save_recommended_topk"] = config_dict[alias]
+
     def _load_dataset_model_config(self, config_dict, mg):
         file_config_dict = dict()
         file_list = []

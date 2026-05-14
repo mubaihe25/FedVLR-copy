@@ -77,6 +77,26 @@
         "use_gpu": { "type": "boolean", "default": false },
         "hyper_parameters": { "type": "array", "default": [] },
         "collect_round_metrics": { "type": "boolean", "default": true },
+        "save_recommended_topk": {
+          "type": "boolean",
+          "description": "Enable post-fit test-set TopK recommendation export through scripts/launch_experiment.py."
+        },
+        "recommend_topk": {
+          "type": "string",
+          "description": "Optional TopK output directory. Relative paths are resolved under the run result directory by the launcher."
+        },
+        "output_topk": {
+          "type": "boolean",
+          "description": "Alias for save_recommended_topk."
+        },
+        "save_recommend_topk": {
+          "type": "boolean",
+          "description": "Alias for save_recommended_topk."
+        },
+        "topk_export": {
+          "type": "boolean",
+          "description": "Alias for save_recommended_topk."
+        },
         "lr": { "type": "number" },
         "l2_reg": { "type": "number" },
         "alpha": { "type": "number" },
