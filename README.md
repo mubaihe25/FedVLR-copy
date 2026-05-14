@@ -38,7 +38,7 @@ common/        通用 trainer、loss、模型抽象
 configs/       模型/数据集配置、能力矩阵、统一实验 schema、batch 配置
 defenses/      范数裁剪、更新过滤、截尾均值、Median、Krum、central DP-style noise、鲁棒防御入口
 models/        推荐模型和多模态推荐模型
-privacy_eval/  风险观测和隐私相关指标
+privacy_eval/  风险观测、成员推断 probe、梯度泄露 demo probe 和隐私相关指标
 scripts/       启动、batch、验证和汇总脚本
 utils/         配置、数据加载、评估、联邦训练和结果输出
 outputs/       实验输出目录；普通输出不要提交
@@ -95,9 +95,10 @@ CSV 输出可包含逐轮记录、`best_summary` 和 `tail_mean_summary`。`best
 - 投毒攻击和恶意更新模拟；
 - 更新缩放、符号翻转、模型替换和统一非定向投毒；
 - 范数裁剪、更新过滤、截尾均值、逐元素 Median、Krum 风格客户端选择和 central DP-style noise 防御；
-- 客户端更新范数、只读泄露探针等风险观测。
+- 客户端更新范数、score-based membership_inference_probe、gradient_leakage_probe 等风险观测。
 
 当前训练链路没有正式实现差分隐私、同态加密或安全聚合。`dp_noise` 只是聚合前裁剪加 Gaussian noise 的 central DP-style noise defense，没有 formal privacy accountant；相关内容不能写成完整差分隐私能力。
+`membership_inference_probe` 只是基于 score/rank/loss 差异的轻量成员推断观测；`gradient_leakage_probe` 是图像/多模态梯度泄露风险 demo，不代表完整 DLG/InvertingGrad 或 FedVLR 原始图像恢复能力。
 
 ## 轻量验证
 

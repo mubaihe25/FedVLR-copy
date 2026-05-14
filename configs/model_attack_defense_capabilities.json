@@ -494,6 +494,57 @@
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": ["FedRAP", "MMFedRAP"],
       "notes": "统计每轮客户端更新范数，不修改训练行为。"
+    },
+    {
+      "name": "membership_inference_probe",
+      "aliases": ["membership_inference"],
+      "type": "privacy_probe",
+      "family": "privacy_probe",
+      "category": "membership_inference",
+      "strategy": "score_based_membership_inference_probe",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "config_schema": {
+        "member_scores": "list[float]",
+        "non_member_scores": "list[float]",
+        "membership_threshold": "float",
+        "score_direction": "string"
+      },
+      "default_values": {
+        "score_direction": "higher_is_member"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental score-based membership inference probe. It compares member and non-member score distributions and is not a full black-box industrial MIA."
+    },
+    {
+      "name": "gradient_leakage_probe",
+      "aliases": ["gradient_leakage", "image_leakage_probe"],
+      "type": "privacy_probe",
+      "family": "privacy_probe",
+      "category": "gradient_leakage",
+      "strategy": "gradient_leakage_risk_probe",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "config_schema": {
+        "sensitive_modality": "string",
+        "norm_reference": "float",
+        "energy_reference": "float",
+        "zero_threshold": "float"
+      },
+      "default_values": {
+        "sensitive_modality": "unknown",
+        "norm_reference": 10.0,
+        "energy_reference": 100.0,
+        "zero_threshold": 1e-12
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental gradient/image leakage demo probe. It reports gradient-risk signals and is not full FedVLR image reconstruction or DLG/InvertingGrad integration."
     }
   ],
   "validated_combinations": [
