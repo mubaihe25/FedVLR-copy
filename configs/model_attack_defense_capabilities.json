@@ -387,6 +387,69 @@
       "notes": "当前强攻防主线推荐防御模块。"
     },
     {
+      "name": "median",
+      "type": "experimental_robust_aggregation_defense",
+      "family": "robust_defense",
+      "category": "robust_aggregation",
+      "strategy": "coordinate_median",
+      "display_category": "robust defense",
+      "status": "experimental",
+      "is_read_only": false,
+      "mutates_participant_params": true,
+      "config_schema": {},
+      "default_values": {},
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental before_aggregation defense. It applies coordinate-wise median to compatible tensor leaves while preserving participant keys for existing model aggregators."
+    },
+    {
+      "name": "krum",
+      "type": "experimental_robust_selection_defense",
+      "family": "robust_defense",
+      "category": "robust_selection",
+      "strategy": "krum",
+      "display_category": "robust defense",
+      "status": "experimental",
+      "is_read_only": false,
+      "mutates_participant_params": true,
+      "config_schema": {
+        "byzantine_count": "integer",
+        "estimated_malicious_count": "integer",
+        "multi_krum_k": "integer",
+        "distance_norm": "string"
+      },
+      "default_values": {
+        "distance_norm": "l2"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental before_aggregation Krum-style selector. It flattens compatible tensor updates and keeps one or more majority-like client updates."
+    },
+    {
+      "name": "dp_noise",
+      "type": "experimental_central_noise_defense",
+      "family": "robust_defense",
+      "category": "privacy_style_noise",
+      "strategy": "clip_then_gaussian_noise",
+      "display_category": "robust defense",
+      "status": "experimental",
+      "is_read_only": false,
+      "mutates_participant_params": true,
+      "config_schema": {
+        "clip_norm": "float",
+        "noise_multiplier": "float",
+        "noise_std": "float",
+        "seed": "integer"
+      },
+      "default_values": {
+        "clip_norm": 5.0,
+        "noise_multiplier": 0.0
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental central DP-style noise defense only. It has no formal privacy accountant and must not be described as complete differential privacy."
+    },
+    {
       "name": "robust_defense",
       "aliases": ["robust", "robust_aggregation_defense"],
       "type": "unified_robust_defense",

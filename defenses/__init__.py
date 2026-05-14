@@ -2,6 +2,9 @@
 
 from defenses.base_defense import BaseDefense
 from defenses.client_update_anomaly_detector import ClientUpdateAnomalyDetector
+from defenses.dp_noise_defense import DPNoiseDefense
+from defenses.krum_defense import KrumDefense
+from defenses.median_defense import MedianDefense
 from defenses.norm_clip_defense import NormClipDefense
 from defenses.noop_defense import NoOpDefense
 from defenses.robust_defense import RobustDefense
@@ -12,6 +15,9 @@ from defenses.registry import get_defense, list_defenses, register_defense
 __all__ = [
     "BaseDefense",
     "ClientUpdateAnomalyDetector",
+    "DPNoiseDefense",
+    "KrumDefense",
+    "MedianDefense",
     "NormClipDefense",
     "RobustDefense",
     "TrimmedMeanDefense",

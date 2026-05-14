@@ -36,7 +36,7 @@
 attacks/       投毒攻击、更新缩放、符号翻转、模型替换、风险探针
 common/        通用 trainer、loss、模型抽象
 configs/       模型/数据集配置、能力矩阵、统一实验 schema、batch 配置
-defenses/      范数裁剪、更新过滤、截尾均值、鲁棒防御入口
+defenses/      范数裁剪、更新过滤、截尾均值、Median、Krum、central DP-style noise、鲁棒防御入口
 models/        推荐模型和多模态推荐模型
 privacy_eval/  风险观测和隐私相关指标
 scripts/       启动、batch、验证和汇总脚本
@@ -94,10 +94,10 @@ CSV 输出可包含逐轮记录、`best_summary` 和 `tail_mean_summary`。`best
 
 - 投毒攻击和恶意更新模拟；
 - 更新缩放、符号翻转、模型替换和统一非定向投毒；
-- 范数裁剪、更新过滤、截尾均值和鲁棒防御入口；
+- 范数裁剪、更新过滤、截尾均值、逐元素 Median、Krum 风格客户端选择和 central DP-style noise 防御；
 - 客户端更新范数、只读泄露探针等风险观测。
 
-当前训练链路没有正式实现差分隐私、同态加密或安全聚合。相关内容只能写成后续扩展方向、规划能力或未生效占位。
+当前训练链路没有正式实现差分隐私、同态加密或安全聚合。`dp_noise` 只是聚合前裁剪加 Gaussian noise 的 central DP-style noise defense，没有 formal privacy accountant；相关内容不能写成完整差分隐私能力。
 
 ## 轻量验证
 

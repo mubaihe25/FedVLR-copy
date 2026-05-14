@@ -94,6 +94,39 @@
     },
     "defense_params": {
       "type": "object",
+      "properties": {
+        "median": {
+          "type": "object",
+          "description": "Experimental coordinate-wise median defense parameters. The current implementation has no required parameters.",
+          "additionalProperties": true
+        },
+        "krum": {
+          "type": "object",
+          "description": "Experimental Krum-style client selection defense parameters.",
+          "properties": {
+            "byzantine_count": { "type": "integer", "minimum": 0 },
+            "estimated_malicious_count": { "type": "integer", "minimum": 0 },
+            "multi_krum_k": { "type": "integer", "minimum": 1 },
+            "distance_norm": {
+              "type": "string",
+              "enum": ["l1", "l2", "euclidean"],
+              "default": "l2"
+            }
+          },
+          "additionalProperties": true
+        },
+        "dp_noise": {
+          "type": "object",
+          "description": "Experimental central DP-style noise defense. It is not a full differential privacy accountant.",
+          "properties": {
+            "clip_norm": { "type": "number", "exclusiveMinimum": 0 },
+            "noise_multiplier": { "type": "number", "minimum": 0 },
+            "noise_std": { "type": "number", "minimum": 0 },
+            "seed": { "type": "integer" }
+          },
+          "additionalProperties": true
+        }
+      },
       "description": "按模块名分组的防御参数，例如 {\"robust_defense\": {\"robust_defense_mode\": \"trimmed_mean\", \"robust_trim_ratio\": 0.2}}。",
       "additionalProperties": {
         "type": "object",
