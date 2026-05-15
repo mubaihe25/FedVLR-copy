@@ -297,6 +297,12 @@ class DPNoiseDefense(BaseDefense):
             "skipped_tensor_count": skipped_tensor_count,
             "norms_before": norms_before or {},
             "norms_after": norms_after or {},
+            "privacy_mode": "central_dp_style_update_noise",
+            "formal_accountant": False,
+            "utility_privacy_tradeoff_note": (
+                "larger noise may reduce utility; this module reports no epsilon/delta"
+            ),
+            "opacus_compatible_future_work": True,
             "note": "central noise defense, not full formal DP accountant",
         }
 
@@ -313,23 +319,41 @@ class DPNoiseDefense(BaseDefense):
                 "clip_norm": self.clip_norm,
                 "noise_multiplier": self.noise_multiplier,
                 "noise_std": self.noise_std,
+                "clipped_client_count": 0,
+                "noised_tensor_count": 0,
                 "total_clipped_clients": 0,
                 "total_noised_tensor_count": 0,
+                "privacy_mode": "central_dp_style_update_noise",
+                "formal_accountant": False,
+                "utility_privacy_tradeoff_note": (
+                    "larger noise may reduce utility; this module reports no epsilon/delta"
+                ),
+                "opacus_compatible_future_work": True,
                 "note": "central noise defense, not full formal DP accountant",
             }
 
+        clipped_total = int(
+            sum(int(item.get("clipped_client_count", 0) or 0) for item in self.history)
+        )
+        noised_total = int(
+            sum(int(item.get("noised_tensor_count", 0) or 0) for item in self.history)
+        )
         return {
             "defense_type": "dp_noise",
             "num_rounds": len(self.history),
             "clip_norm": self.clip_norm,
             "noise_multiplier": self.noise_multiplier,
             "noise_std": self.noise_std,
-            "total_clipped_clients": int(
-                sum(int(item.get("clipped_client_count", 0) or 0) for item in self.history)
+            "clipped_client_count": clipped_total,
+            "noised_tensor_count": noised_total,
+            "total_clipped_clients": clipped_total,
+            "total_noised_tensor_count": noised_total,
+            "privacy_mode": "central_dp_style_update_noise",
+            "formal_accountant": False,
+            "utility_privacy_tradeoff_note": (
+                "larger noise may reduce utility; this module reports no epsilon/delta"
             ),
-            "total_noised_tensor_count": int(
-                sum(int(item.get("noised_tensor_count", 0) or 0) for item in self.history)
-            ),
+            "opacus_compatible_future_work": True,
             "note": "central noise defense, not full formal DP accountant",
         }
 

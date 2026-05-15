@@ -455,6 +455,61 @@
       "notes": "Experimental before_aggregation Krum-style selector. It flattens compatible tensor updates and keeps one or more majority-like client updates."
     },
     {
+      "name": "multi_krum",
+      "aliases": ["multikrum", "multi_krum_defense"],
+      "type": "experimental_robust_selection_defense",
+      "family": "robust_defense",
+      "category": "robust_selection",
+      "strategy": "multi_krum",
+      "display_category": "robust defense",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": false,
+      "mutates_participant_params": true,
+      "config_schema": {
+        "byzantine_count": "integer",
+        "estimated_malicious_count": "integer",
+        "multi_krum_k": "integer",
+        "selected_client_count": "integer",
+        "distance_norm": "string"
+      },
+      "default_values": {
+        "distance_norm": "l2"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental before_aggregation Multi-Krum-style selector. It selects multiple majority-like updates and aggregates the selected set."
+    },
+    {
+      "name": "bulyan",
+      "type": "experimental_robust_aggregation_defense",
+      "family": "robust_defense",
+      "category": "robust_aggregation",
+      "strategy": "multi_krum_then_trimmed_mean",
+      "display_category": "robust defense",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": false,
+      "mutates_participant_params": true,
+      "config_schema": {
+        "byzantine_count": "integer",
+        "estimated_malicious_count": "integer",
+        "bulyan_candidate_count": "integer",
+        "candidate_count": "integer",
+        "trim_ratio": "float",
+        "fallback_rule": "string",
+        "distance_norm": "string"
+      },
+      "default_values": {
+        "trim_ratio": 0.2,
+        "fallback_rule": "trimmed_mean",
+        "distance_norm": "l2"
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Simplified Bulyan for smoke/showcase use. It falls back instead of failing when client count is insufficient for theoretical Bulyan assumptions."
+    },
+    {
       "name": "dp_noise",
       "type": "experimental_central_noise_defense",
       "family": "robust_defense",
@@ -601,6 +656,76 @@
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
       "notes": "Experimental gradient/image leakage demo probe. It reports gradient-risk signals and is not full FedVLR image reconstruction or DLG/InvertingGrad integration."
+    },
+    {
+      "name": "preference_inference_probe",
+      "aliases": ["preference_inference"],
+      "type": "privacy_probe",
+      "family": "privacy_probe",
+      "category": "preference_inference",
+      "strategy": "recommendation_group_inference_probe",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "config_schema": {
+        "recommendation_file": "string",
+        "recommendation_dir": "string",
+        "item_metadata": "string",
+        "item_id_group_bucket_size": "integer"
+      },
+      "default_values": {
+        "item_id_group_bucket_size": 50
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental metadata/rank-based preference inference probe. Without item metadata it is only an item_id group proxy."
+    },
+    {
+      "name": "gradient_inversion_toy",
+      "aliases": ["gradient_inversion"],
+      "type": "privacy_demo",
+      "family": "privacy_probe",
+      "category": "gradient_inversion",
+      "strategy": "DLG_style_toy_gradient_matching",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "demo_only": true,
+      "config_schema": {
+        "channels": "integer",
+        "height": "integer",
+        "width": "integer",
+        "steps": "integer",
+        "seed": "integer"
+      },
+      "default_values": {
+        "channels": 1,
+        "height": 16,
+        "width": 16,
+        "steps": 50,
+        "seed": 42
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Toy DLG-style gradient matching demo over synthetic tensors. It is not full FedVLR image reconstruction."
+    },
+    {
+      "name": "opacus_feasibility",
+      "type": "future_work_check",
+      "family": "privacy_probe",
+      "category": "differential_privacy",
+      "strategy": "opacus_environment_feasibility_check",
+      "status": "future_work",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "config_schema": {},
+      "default_values": {},
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Feasibility check only. Formal Opacus DP-SGD would require per-sample gradients and training-loop refactor."
     }
   ],
   "validated_combinations": [
@@ -646,6 +771,26 @@
       "scenario": "attack_and_defense",
       "attacks": ["poisoning_attack"],
       "defenses": ["trimmed_mean"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated"
+    },
+    {
+      "name": "poisoning_multi_krum",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["multi_krum"],
+      "privacy_metrics": [],
+      "validated_models": [],
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "status": "recommended_unvalidated"
+    },
+    {
+      "name": "poisoning_bulyan",
+      "scenario": "attack_and_defense",
+      "attacks": ["poisoning_attack"],
+      "defenses": ["bulyan"],
       "privacy_metrics": [],
       "validated_models": [],
       "recommended_models": ["FedRAP", "MMFedRAP"],
@@ -718,6 +863,8 @@
     "attack_and_robust_defense_trimmed_mean",
     "attack_and_robust_defense_clip_then_trimmed_mean",
     "poisoning_trimmed_mean",
+    "poisoning_multi_krum",
+    "poisoning_bulyan",
     "poisoning_norm_clip",
     "targeted_poisoning",
     "secure_aggregation_sim",

@@ -3,10 +3,10 @@
   "dataset": "KU",
   "scenario": "privacy_observation",
   "type": "SecurityMatrixSmoke",
-  "comment": "membership_probe_smoke",
+  "comment": "opacus_feasibility_smoke",
   "enabled_attacks": [],
   "enabled_defenses": [],
-  "enabled_privacy_metrics": ["membership_inference_probe"],
+  "enabled_privacy_metrics": [],
   "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
   "training_params": {
     "epochs": 1,
@@ -22,12 +22,6 @@
   },
   "attack_params": {},
   "defense_params": {},
-  "privacy_params": {
-    "membership_inference_probe": {
-      "member_scores": [0.72, 0.68, 0.75],
-      "non_member_scores": [0.41, 0.38, 0.46],
-      "score_direction": "higher_is_member"
-    }
-  },
-  "extra_config": {}
+  "privacy_params": { "opacus_feasibility": {} },
+  "extra_config": { "smoke_only": true, "future_work": true, "runner": "privacy_eval.opacus_feasibility_check" }
 }

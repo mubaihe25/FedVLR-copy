@@ -195,12 +195,18 @@ class TargetedPoisoningAttack(BaseAttack):
             "poisoning_mode": "targeted_or_preference_proxy",
             "proxy_only": True,
             "target_item_ids": list(self.target_item_ids),
+            "target_item_count": len(self.target_item_ids),
             "preference_direction": self.direction,
             "targeted_poisoning_strength": self.strength,
+            "scale_factor": self.strength,
             "attacked_clients": [],
             "attacked_client_count": 0,
+            "malicious_client_count": 0,
             "touched_tensor_count": 0,
+            "affected_tensor_count": 0,
             "targeted_row_count": 0,
+            "affected_target_param_count": 0,
+            "item_level_target_not_guaranteed": True,
             "avg_attacked_norm_before": None,
             "avg_attacked_norm_after": None,
             "mutation_modes": [],
@@ -256,8 +262,11 @@ class TargetedPoisoningAttack(BaseAttack):
             {
                 "attacked_clients": attacked_clients,
                 "attacked_client_count": len(attacked_clients),
+                "malicious_client_count": len(malicious_clients),
                 "touched_tensor_count": int(touched_tensor_count),
+                "affected_tensor_count": int(touched_tensor_count),
                 "targeted_row_count": int(targeted_row_count),
+                "affected_target_param_count": int(targeted_row_count),
                 "avg_attacked_norm_before": (
                     float(sum(norm_before_values) / len(norm_before_values))
                     if norm_before_values
@@ -305,8 +314,14 @@ class TargetedPoisoningAttack(BaseAttack):
         latest["total_touched_tensor_count"] = int(
             sum(int(item.get("touched_tensor_count", 0)) for item in self.history)
         )
+        latest["total_affected_tensor_count"] = int(
+            sum(int(item.get("affected_tensor_count", 0)) for item in self.history)
+        )
         latest["total_targeted_row_count"] = int(
             sum(int(item.get("targeted_row_count", 0)) for item in self.history)
+        )
+        latest["total_affected_target_param_count"] = int(
+            sum(int(item.get("affected_target_param_count", 0)) for item in self.history)
         )
         return latest
 

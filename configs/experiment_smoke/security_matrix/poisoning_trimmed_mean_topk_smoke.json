@@ -1,0 +1,27 @@
+{
+  "model": "FedAvg",
+  "dataset": "KU",
+  "scenario": "attack_and_defense",
+  "type": "SecurityMatrixTopKSmoke",
+  "comment": "poisoning_trimmed_mean_topk_smoke",
+  "enabled_attacks": ["poisoning_attack"],
+  "enabled_defenses": ["trimmed_mean"],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": true, "mode": "ratio", "ratio": 0.2, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.05,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": { "poisoning_attack": { "poisoning_enabled_substrategies": ["client_update_scale"], "poisoning_attack_scale": 1.5 } },
+  "defense_params": { "trimmed_mean": { "trim_ratio": 0.2, "min_clients_for_trim": 3 } },
+  "privacy_params": {},
+  "extra_config": { "smoke_only": true }
+}

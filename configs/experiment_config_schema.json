@@ -169,6 +169,44 @@
           },
           "additionalProperties": true
         },
+        "multi_krum": {
+          "type": "object",
+          "description": "Experimental Multi-Krum-style client selection and aggregation defense parameters.",
+          "properties": {
+            "byzantine_count": { "type": "integer", "minimum": 0 },
+            "estimated_malicious_count": { "type": "integer", "minimum": 0 },
+            "multi_krum_k": { "type": "integer", "minimum": 1 },
+            "selected_client_count": { "type": "integer", "minimum": 1 },
+            "distance_norm": {
+              "type": "string",
+              "enum": ["l1", "l2", "euclidean"],
+              "default": "l2"
+            }
+          },
+          "additionalProperties": true
+        },
+        "bulyan": {
+          "type": "object",
+          "description": "Simplified Bulyan defense: Multi-Krum candidate selection followed by coordinate-wise trimmed mean, with fallback when client count is insufficient.",
+          "properties": {
+            "byzantine_count": { "type": "integer", "minimum": 0 },
+            "estimated_malicious_count": { "type": "integer", "minimum": 0 },
+            "bulyan_candidate_count": { "type": "integer", "minimum": 1 },
+            "candidate_count": { "type": "integer", "minimum": 1 },
+            "trim_ratio": { "type": "number", "minimum": 0, "exclusiveMaximum": 0.5 },
+            "fallback_rule": {
+              "type": "string",
+              "enum": ["trimmed_mean", "median"],
+              "default": "trimmed_mean"
+            },
+            "distance_norm": {
+              "type": "string",
+              "enum": ["l1", "l2", "euclidean"],
+              "default": "l2"
+            }
+          },
+          "additionalProperties": true
+        },
         "dp_noise": {
           "type": "object",
           "description": "Experimental central DP-style noise defense. It is not a full differential privacy accountant.",
@@ -185,8 +223,15 @@
           "description": "Simulation-only pairwise mask cancellation summary. It is not production cryptographic secure aggregation.",
           "properties": {
             "secure_agg_seed": { "type": "integer" },
+            "mask_seed": { "type": "integer" },
             "secure_agg_mask_std": { "type": "number", "minimum": 0 },
-            "secure_agg_max_elements": { "type": "integer", "minimum": 1 }
+            "secure_agg_max_elements": { "type": "integer", "minimum": 1 },
+            "dropout_simulation": { "type": "boolean", "default": false },
+            "dropout_client_count": { "type": "integer", "minimum": 0 },
+            "dropout_client_ids": {
+              "type": "array",
+              "items": { "type": ["string", "integer"] }
+            }
           },
           "additionalProperties": true
         }
@@ -234,6 +279,34 @@
             "energy_reference": { "type": "number", "exclusiveMinimum": 0 },
             "zero_threshold": { "type": "number", "minimum": 0 }
           },
+          "additionalProperties": true
+        },
+        "preference_inference_probe": {
+          "type": "object",
+          "description": "Experimental recommendation metadata/rank-based preference inference probe parameters.",
+          "properties": {
+            "recommendation_file": { "type": "string" },
+            "recommendation_dir": { "type": "string" },
+            "item_metadata": { "type": "string" },
+            "item_id_group_bucket_size": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": true
+        },
+        "gradient_inversion_toy": {
+          "type": "object",
+          "description": "Toy DLG-style gradient matching demo over synthetic tensors. It is not full FedVLR image reconstruction.",
+          "properties": {
+            "channels": { "type": "integer", "minimum": 1, "maximum": 3 },
+            "height": { "type": "integer", "minimum": 4, "maximum": 32 },
+            "width": { "type": "integer", "minimum": 4, "maximum": 32 },
+            "steps": { "type": "integer", "minimum": 1, "maximum": 200 },
+            "seed": { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
+        "opacus_feasibility": {
+          "type": "object",
+          "description": "Future-work feasibility check only. It does not install Opacus or modify FedVLR training.",
           "additionalProperties": true
         }
       },

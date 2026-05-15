@@ -129,3 +129,13 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 ```
 
 修改配置、能力矩阵或 launcher 时，优先使用 validate-only 或 dry-run，再考虑真实训练。
+
+## 后端安全能力分层
+
+当前后端安全能力按三层维护：
+
+- 攻击：`poisoning_attack` 统一非定向投毒入口，包含 update scale / sign flip / model replacement；`targeted_poisoning` 和 `preference_poisoning` 是 update-space proxy，支持 target item id 参数和 summary，但不保证真实 item-level backdoor。
+- 隐私攻击 / 观测：`membership_inference_probe` 与推荐 TopK runner 只基于真实 label + score/rank；`preference_inference_probe` 基于推荐列表和 item metadata，缺少 metadata 时只能输出 item_id group proxy；`gradient_leakage_probe` 是梯度风险 probe；`run_gradient_inversion_toy.py` 是 synthetic DLG-style toy demo，不是 FedVLR 原图恢复。
+- 防御：鲁棒聚合包含 `trimmed_mean`、`median`、`krum`、`multi_krum`、`bulyan`；`dp_noise` 是 central DP-style update noise，没有 formal privacy accountant；`secure_aggregation_sim` 是 simulation-only mask cancellation summary，不是生产级密码学安全聚合协议。
+
+Opacus 当前只通过 `privacy_eval/opacus_feasibility_check.py` 做可行性检测。正式 DP-SGD 需要 per-sample gradient、PrivacyEngine/optimizer 接入和训练循环改造，不能描述为当前已完成能力。

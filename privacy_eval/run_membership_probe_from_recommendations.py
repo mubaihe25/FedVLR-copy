@@ -355,6 +355,7 @@ def run_probe_from_rows(
     summary["input_source"] = "recommendation_rows"
     summary["rank_based_proxy_score"] = True
     summary["source_files"] = [str(path) for path in source_files]
+    summary["requires_real_membership_labels"] = True
     return summary
 
 
@@ -381,14 +382,27 @@ def run_probe_from_recommendation_files(
         rows.extend(read_csv_rows(path))
     if not rows:
         return not_available("recommendation file could not be parsed", recommendation_files)
+    if membership_labels is None:
+        candidate_dirs = {path.parent for path in recommendation_files}
+        candidate_dirs.update(
+            path.parent.parent for path in recommendation_files if path.parent.parent
+        )
+        for directory in candidate_dirs:
+            candidate = directory / "membership_labels.json"
+            if candidate.exists():
+                membership_labels = candidate
+                break
     member_pairs, non_member_pairs = load_membership_label_sets(membership_labels)
-    return run_probe_from_rows(
+    summary = run_probe_from_rows(
         rows,
         score_direction=score_direction,
         source_files=recommendation_files,
         member_pairs=member_pairs,
         non_member_pairs=non_member_pairs,
     )
+    if membership_labels is not None:
+        summary["membership_labels"] = str(membership_labels)
+    return summary
 
 
 def run_synthetic_recommendation_smoke() -> Dict[str, Any]:

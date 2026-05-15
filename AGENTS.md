@@ -49,3 +49,14 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 ```
 
 涉及统一配置、能力矩阵或启动链路时，优先使用 validate-only 或 dry-run。不要默认运行耗时训练。
+
+## 后端安全能力边界
+
+- `targeted_poisoning` / `preference_poisoning` 只能表述为 update-space proxy 或最小实现；即使配置了 `target_item_ids`，也不保证完整 target-item/backdoor 投毒。
+- `membership_inference_probe` 只基于真实 member/non-member label 与 score/rank；legacy TopK 宽表没有 `membership_labels.json` 时必须输出 `not_available`。
+- `preference_inference_probe` 只基于推荐列表和 item metadata；缺少 metadata 时只能使用 item_id group proxy，不能伪造语义偏好。
+- `gradient_leakage_probe` 与 `run_gradient_inversion_toy.py` 是 demo/probe；toy gradient inversion 只能说明梯度泄露风险，不代表完整 DLG/InvertingGrad 或 FedVLR 原始图像恢复。
+- `dp_noise` 是聚合前裁剪加 Gaussian noise 的 central DP-style update noise；当前没有 Opacus PrivacyEngine 和 formal accountant。
+- `privacy_eval/opacus_feasibility_check.py` 只是 future-work 可行性检测，不应接入主训练循环。
+- `secure_aggregation_sim` 是 simulation-only 成对 mask 抵消摘要；真实 secure aggregation 与 Krum/median/update_filter 这类需要逐客户端更新的鲁棒过滤应作为不同运行模式描述。
+- 新增或修改安全能力后，至少运行 compileall、相关 JSON 解析、模块 synthetic smoke，并汇报是否改动训练主链路、API/前端、依赖和 `git status`。

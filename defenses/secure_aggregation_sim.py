@@ -28,9 +28,16 @@ class SecureAggregationSimDefense(BaseDefense):
     ) -> None:
         super().__init__(name=name, config=config)
         config = config or {}
-        self.seed = int(config.get("secure_agg_seed", config.get("seed", 42)))
+        self.seed = int(
+            config.get("mask_seed", config.get("secure_agg_seed", config.get("seed", 42)))
+        )
         self.mask_std = float(config.get("secure_agg_mask_std", 1.0))
         self.max_elements = int(config.get("secure_agg_max_elements", 10000))
+        self.dropout_simulation = bool(config.get("dropout_simulation", False))
+        self.dropout_client_count = int(config.get("dropout_client_count", 0) or 0)
+        self.dropout_client_ids = [
+            str(client_id) for client_id in config.get("dropout_client_ids", []) or []
+        ]
         self.last_round_output: Dict[str, Any] = {}
         self.history: List[Dict[str, Any]] = []
 
@@ -126,13 +133,26 @@ class SecureAggregationSimDefense(BaseDefense):
     ) -> MutableMapping[str, Any]:
         vectors: List[torch.Tensor] = []
         skipped_client_ids: List[str] = []
+        simulated_dropout_client_ids: List[str] = []
         participant_count = len(participant_params) if isinstance(participant_params, dict) else 0
 
         if isinstance(participant_params, dict):
-            for client_id, client_update in participant_params.items():
+            configured_dropout_ids = set(self.dropout_client_ids)
+            for index, (client_id, client_update) in enumerate(participant_params.items()):
+                client_id_str = str(client_id)
+                should_dropout = self.dropout_simulation and (
+                    client_id_str in configured_dropout_ids
+                    or (
+                        not configured_dropout_ids
+                        and index >= max(0, participant_count - self.dropout_client_count)
+                    )
+                )
+                if should_dropout:
+                    simulated_dropout_client_ids.append(client_id_str)
+                    continue
                 vector = self._flatten_client_update(client_update)
                 if vector is None:
-                    skipped_client_ids.append(str(client_id))
+                    skipped_client_ids.append(client_id_str)
                 else:
                     vectors.append(vector)
 
@@ -151,18 +171,36 @@ class SecureAggregationSimDefense(BaseDefense):
             "is_read_only": True,
             "mutates_participant_params": False,
             "participant_count": int(participant_count),
+            "client_count": int(participant_count),
             "compatible_client_count": int(len(vectors)),
             "skipped_client_count": int(len(skipped_client_ids)),
             "skipped_client_ids": skipped_client_ids,
             "mask_pair_count": simulation.get("mask_pair_count"),
+            "pairwise_mask_count": simulation.get("mask_pair_count"),
             "simulated_tensor_element_count": simulation.get("simulated_tensor_element_count"),
             "aggregate_mask_residual_norm": simulation.get("aggregate_mask_residual_norm"),
             "max_pair_mask_norm": simulation.get("max_pair_mask_norm"),
             "secure_agg_mask_std": self.mask_std,
             "secure_agg_seed": self.seed,
+            "mask_seed": self.seed,
+            "dropout_simulation": self.dropout_simulation,
+            "simulated_dropout_client_count": len(simulated_dropout_client_ids),
+            "simulated_dropout_client_ids": simulated_dropout_client_ids,
+            "individual_update_visible_to_server": False,
+            "does_not_modify_updates": True,
+            "summary_only_simulation": True,
+            "compatibility_warning": (
+                "secure aggregation hides individual updates; per-client robust filtering "
+                "such as Krum, median, or update_filter requires individual updates. "
+                "Describe these as different operating modes."
+            ),
             "note": "simulation only; not a production cryptographic secure aggregation protocol",
             "warnings": warnings,
         }
+        if self.dropout_simulation:
+            warnings.append(
+                "dropout handling is simulated only; no secret sharing or recovery protocol is implemented"
+            )
         if summary["aggregate_mask_residual_norm"] is not None:
             summary["aggregate_mask_cancelled"] = (
                 float(summary["aggregate_mask_residual_norm"]) <= 1e-6
@@ -197,6 +235,7 @@ class SecureAggregationSimDefense(BaseDefense):
         latest["total_mask_pair_count"] = int(
             sum(int(item.get("mask_pair_count") or 0) for item in self.history)
         )
+        latest["total_pairwise_mask_count"] = latest["total_mask_pair_count"]
         return latest
 
 

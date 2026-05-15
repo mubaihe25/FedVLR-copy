@@ -3,6 +3,7 @@
 from privacy_eval.base_metric import BasePrivacyMetric
 from privacy_eval.membership_inference_probe import MembershipInferenceProbe
 from privacy_eval.noop_metric import NoOpPrivacyMetric
+from privacy_eval.preference_inference_probe import PreferenceInferenceProbe
 from privacy_eval.registry import (
     get_privacy_metric,
     list_privacy_metrics,
@@ -34,6 +35,7 @@ __all__ = [
     "ClientUpdateNormMetric",
     "GradientLeakageProbe",
     "MembershipInferenceProbe",
+    "PreferenceInferenceProbe",
     "NoOpPrivacyMetric",
     "RoundMetric",
     "FinalEval",

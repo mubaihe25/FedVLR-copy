@@ -27,11 +27,18 @@ ARTIFACT_NAMES = {
 
 PRIVACY_SIDECAR_PATTERNS = (
     "membership_inference*.json",
+    "preference_inference*.json",
     "gradient_leakage*.json",
+    "gradient_inversion*.json",
+    "opacus_feasibility*.json",
     "privacy_attack_summaries*.json",
     "privacy_risk_summary*.json",
     "targeted_poisoning*.json",
+    "preference_poisoning*.json",
     "secure_aggregation*.json",
+    "multi_krum*.json",
+    "bulyan*.json",
+    "dp_noise*.json",
     "defense_trace*.json",
 )
 
@@ -181,9 +188,10 @@ def find_nested_payload(obj: Any, key_names: Sequence[str]) -> Optional[Dict[str
         for key, value in obj.items():
             if normalize_key(key) in normalized_names and isinstance(value, dict):
                 return value
-        probe_type = normalize_key(obj.get("probe_type", ""))
-        if probe_type in normalized_names:
-            return obj
+        for type_key in ("probe_type", "check_type", "defense_type", "attack_type"):
+            payload_type = normalize_key(obj.get(type_key, ""))
+            if payload_type in normalized_names:
+                return obj
         for value in obj.values():
             found = find_nested_payload(value, key_names)
             if found is not None:
@@ -489,14 +497,15 @@ def extract_attack_defense_summary(
     defense_bundle: Optional[ExperimentBundle],
 ) -> Dict[str, Any]:
     warnings: List[str] = []
+
+    def attack_sidecar(bundle: Optional[ExperimentBundle], names: Sequence[str]) -> Dict[str, Any]:
+        if bundle is None:
+            return {"status": "not_available", "summary_type": names[0]}
+        payload = find_nested_payload(bundle.sources + bundle.sidecar_json, names)
+        return payload or {"status": "not_available", "summary_type": names[0]}
+
     if not (baseline_bundle and attack_bundle and defense_bundle):
         source_bundle = result_bundle or attack_bundle or defense_bundle or baseline_bundle
-        targeted_poisoning = None
-        if source_bundle is not None:
-            targeted_poisoning = find_nested_payload(
-                source_bundle.sources + source_bundle.sidecar_json,
-                ["targeted_poisoning", "preference_poisoning", "targeted_poisoning_attack"],
-            )
         return {
             "baseline": None,
             "attack": None,
@@ -507,8 +516,14 @@ def extract_attack_defense_summary(
             "ndcg_recovery_rate": None,
             "attack_type": active_module_type(source_bundle, "attack_type", "active_attacks") if source_bundle else None,
             "defense_type": active_module_type(source_bundle, "defense_type", "active_defenses") if source_bundle else None,
-            "targeted_poisoning": targeted_poisoning
-            or {"status": "not_available", "summary_type": "targeted_poisoning"},
+            "targeted_poisoning": attack_sidecar(
+                source_bundle,
+                ["targeted_poisoning", "targeted_poisoning_attack"],
+            ),
+            "preference_poisoning": attack_sidecar(
+                source_bundle,
+                ["preference_poisoning", "preference_poisoning_attack"],
+            ),
             "note": "baseline/attack/defense dirs were not all provided; comparison artifact is structural only.",
             "warnings": ["baseline-dir, attack-dir, and defense-dir are required for comparison metrics"],
         }
@@ -566,11 +581,14 @@ def extract_attack_defense_summary(
         "ndcg_recovery_rate": ndcg_recovery_rate,
         "attack_type": active_module_type(attack_bundle, "attack_type", "active_attacks"),
         "defense_type": active_module_type(defense_bundle, "defense_type", "active_defenses"),
-        "targeted_poisoning": find_nested_payload(
-            attack_bundle.sources + attack_bundle.sidecar_json,
-            ["targeted_poisoning", "preference_poisoning", "targeted_poisoning_attack"],
-        )
-        or {"status": "not_available", "summary_type": "targeted_poisoning"},
+        "targeted_poisoning": attack_sidecar(
+            attack_bundle,
+            ["targeted_poisoning", "targeted_poisoning_attack"],
+        ),
+        "preference_poisoning": attack_sidecar(
+            attack_bundle,
+            ["preference_poisoning", "preference_poisoning_attack"],
+        ),
         "note": "Recovery is computed as (defense - attack) / (baseline - attack) when all Recall@50/NDCG@50 values are available.",
         "warnings": warnings,
     }
@@ -861,6 +879,9 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
     selected_indices = first_list(
         [value for source in defense_sources for value in collect_nested_values(source, ["selected_indices"])]
     )
+    rejected_indices = first_list(
+        [value for source in defense_sources for value in collect_nested_values(source, ["rejected_indices"])]
+    )
     rejected_client_count = sum_numeric_values(
         [
             value
@@ -871,6 +892,8 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
     named_defense_summaries = {
         "median": find_nested_payload(defense_sources, ["median", "mediandefense"]),
         "krum": find_nested_payload(defense_sources, ["krum", "krumdefense"]),
+        "multi_krum": find_nested_payload(defense_sources, ["multi_krum", "multikrum", "multi_krum_defense"]),
+        "bulyan": find_nested_payload(defense_sources, ["bulyan", "bulyan_defense"]),
         "dp_noise": find_nested_payload(defense_sources, ["dp_noise", "dpnoise", "dpnoisedefense"]),
         "secure_aggregation_sim": find_nested_payload(
             defense_sources,
@@ -878,7 +901,7 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
         ),
     }
     if not any(named_defense_summaries.values()):
-        warnings.append("named defense summaries for median/krum/dp_noise/secure_aggregation_sim not found")
+        warnings.append("named defense summaries for median/krum/multi_krum/bulyan/dp_noise/secure_aggregation_sim not found")
 
     return {
         "defense_type": defense_type,
@@ -887,11 +910,16 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
         "filtered_client_count": int(filtered_count) if filtered_count is not None else None,
         "trimmed_updates": int(trimmed_updates) if trimmed_updates is not None else None,
         "selected_indices": selected_indices,
+        "rejected_indices": rejected_indices,
         "rejected_client_count": int(rejected_client_count) if rejected_client_count is not None else None,
         "median": named_defense_summaries["median"]
         or {"status": "not_available", "summary_type": "median"},
         "krum": named_defense_summaries["krum"]
         or {"status": "not_available", "summary_type": "krum"},
+        "multi_krum": named_defense_summaries["multi_krum"]
+        or {"status": "not_available", "summary_type": "multi_krum"},
+        "bulyan": named_defense_summaries["bulyan"]
+        or {"status": "not_available", "summary_type": "bulyan"},
         "dp_noise": named_defense_summaries["dp_noise"]
         or {"status": "not_available", "summary_type": "dp_noise"},
         "secure_aggregation_sim": named_defense_summaries["secure_aggregation_sim"]
@@ -953,17 +981,34 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         sources,
         ["membership_inference", "membership_inference_probe"],
     )
+    preference = find_nested_payload(
+        sources,
+        ["preference_inference", "preference_inference_probe"],
+    )
     gradient = find_nested_payload(sources, ["gradient_leakage", "gradient_leakage_probe"])
+    gradient_inversion = find_nested_payload(
+        sources,
+        ["gradient_inversion_toy", "gradient_inversion", "gradient_inversion_summary"],
+    )
+    opacus_feasibility = find_nested_payload(
+        sources,
+        ["opacus_feasibility", "opacus_feasibility_check"],
+    )
 
     payload = {
         "client_update_norm": client_update_norm or not_available_probe("client_update_norm"),
         "membership_inference": membership or not_available_probe("membership_inference"),
+        "preference_inference": preference or not_available_probe("preference_inference"),
         "gradient_leakage": gradient or not_available_probe("gradient_leakage"),
+        "gradient_inversion": gradient_inversion or not_available_probe("gradient_inversion_toy"),
+        "opacus_feasibility": opacus_feasibility or not_available_probe("opacus_feasibility"),
         "risk_level": overall_risk_level(
             [
                 client_update_norm or {},
                 membership or {},
+                preference or {},
                 gradient or {},
+                gradient_inversion or {},
             ]
         ),
         "warnings": warnings,
@@ -972,8 +1017,14 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         warnings.append("client_update_norm not found in this experiment")
     if membership is None:
         warnings.append("membership_inference_probe result not found in this experiment")
+    if preference is None:
+        warnings.append("preference_inference_probe result not found in this experiment")
     if gradient is None:
         warnings.append("gradient_leakage_probe result not found in this experiment")
+    if gradient_inversion is None:
+        warnings.append("gradient_inversion_toy result not found in this experiment")
+    if opacus_feasibility is None:
+        warnings.append("opacus_feasibility result not found in this experiment")
 
     if include_synthetic:
         try:
@@ -983,12 +1034,18 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
             from privacy_eval.membership_inference_probe import (
                 run_synthetic_smoke as run_membership_smoke,
             )
+            from privacy_eval.preference_inference_probe import (
+                run_synthetic_smoke as run_preference_smoke,
+            )
+            from privacy_eval.run_gradient_inversion_toy import run_gradient_inversion_toy
 
             payload["synthetic_demo"] = {
                 "demo_only": True,
                 "not_from_real_training": True,
                 "membership_inference": run_membership_smoke(),
+                "preference_inference": run_preference_smoke(),
                 "gradient_leakage": run_gradient_smoke(),
+                "gradient_inversion": run_gradient_inversion_toy(steps=5),
             }
         except Exception as exc:
             warnings.append("synthetic privacy smoke failed: {}".format(exc))
