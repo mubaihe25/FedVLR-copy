@@ -258,6 +258,11 @@
               "items": { "type": "number" }
             },
             "membership_threshold": { "type": "number" },
+            "membership_labels": { "type": "string" },
+            "label_granularity": {
+              "type": "string",
+              "enum": ["user_item_pair", "item_level_proxy", "row_label"]
+            },
             "score_direction": {
               "type": "string",
               "enum": ["higher_is_member", "lower_is_member", "loss_lower_is_member"],
@@ -289,6 +294,29 @@
             "recommendation_dir": { "type": "string" },
             "item_metadata": { "type": "string" },
             "item_id_group_bucket_size": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": true
+        },
+        "recommendation_manipulation": {
+          "type": "object",
+          "description": "Sidecar metric over baseline/attack/defense TopK lists. If target_items is absent, it only reports list-shift metrics.",
+          "properties": {
+            "baseline_topk": { "type": "string" },
+            "attack_topk": { "type": "string" },
+            "defense_topk": { "type": "string" },
+            "target_items": { "type": "string" },
+            "topk": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": true
+        },
+        "update_leakage_risk_probe": {
+          "type": "object",
+          "description": "Read-only real participant_params update leakage risk summary. It is not image reconstruction and does not save raw updates.",
+          "properties": {
+            "norm_reference": { "type": "number", "exclusiveMinimum": 0 },
+            "energy_reference": { "type": "number", "exclusiveMinimum": 0 },
+            "zero_threshold": { "type": "number", "minimum": 0 },
+            "max_flatten_elements": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": true
         },

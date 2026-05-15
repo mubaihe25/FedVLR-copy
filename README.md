@@ -139,3 +139,15 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 - 防御：鲁棒聚合包含 `trimmed_mean`、`median`、`krum`、`multi_krum`、`bulyan`；`dp_noise` 是 central DP-style update noise，没有 formal privacy accountant；`secure_aggregation_sim` 是 simulation-only mask cancellation summary，不是生产级密码学安全聚合协议。
 
 Opacus 当前只通过 `privacy_eval/opacus_feasibility_check.py` 做可行性检测。正式 DP-SGD 需要 per-sample gradient、PrivacyEngine/optimizer 接入和训练循环改造，不能描述为当前已完成能力。
+
+## Realized Security Sidecars
+
+Recent backend security work adds three real-data-oriented sidecar paths:
+
+- `privacy_eval/generate_membership_labels.py` builds `membership_labels.json` from dataset train/test splits. For KU it reads `datasets/KU/inter.csv`, uses `split_label=0` as members and `split_label=2` as non-members, and can filter labels by an exported TopK file.
+- `privacy_eval/run_membership_probe_from_recommendations.py` can consume `membership_labels.json` plus recommendation score/rank fields. Legacy `top_0 ... top_k` files use `score = 1 / (rank + 1)` and must be reported as `rank_based_proxy`.
+- `privacy_eval/recommendation_manipulation_metrics.py` compares baseline/attack/defense TopK lists and optionally reads `target_items.json`. Without target items it only reports overlap/Jaccard/list-shift metrics.
+- `privacy_eval/update_leakage_risk_probe.py` is a read-only privacy metric over real `participant_params`. It reports update norms, sparsity, energy, diversity, and modality-risk buckets, but it does not save raw updates and is not image reconstruction.
+- `scripts/build_security_sidecars.py` writes `membership_labels.json`, `target_items.json`, `item_metadata_stub.json`, and `security_sidecar_manifest.json` under `outputs/security_sidecars/<dataset>/`.
+
+Keep these boundaries explicit: item metadata stubs have no real semantic title/tag; membership inference with rank-only TopK is a proxy; recommendation manipulation without target items is list-change analysis only; update leakage risk is a summary probe, not DLG/InvertingGrad reconstruction.

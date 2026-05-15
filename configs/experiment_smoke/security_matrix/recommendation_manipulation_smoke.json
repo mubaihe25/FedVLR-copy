@@ -1,0 +1,35 @@
+{
+  "model": "FedAvg",
+  "dataset": "KU",
+  "scenario": "custom",
+  "type": "SecurityMatrixSmoke",
+  "comment": "recommendation_manipulation_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.05,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {
+    "recommendation_manipulation": {
+      "baseline_topk": "path/to/baseline_topk.csv",
+      "attack_topk": "path/to/attack_topk.csv",
+      "defense_topk": "path/to/defense_topk.csv",
+      "target_items": "outputs/security_sidecars/KU/target_items.json",
+      "topk": 50
+    }
+  },
+  "extra_config": {}
+}

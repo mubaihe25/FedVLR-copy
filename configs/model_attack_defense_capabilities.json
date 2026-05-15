@@ -712,6 +712,33 @@
       "notes": "Toy DLG-style gradient matching demo over synthetic tensors. It is not full FedVLR image reconstruction."
     },
     {
+      "name": "update_leakage_risk_probe",
+      "aliases": ["update_leakage_risk"],
+      "type": "privacy_probe",
+      "family": "privacy_probe",
+      "category": "update_leakage_risk",
+      "strategy": "real_participant_params_update_risk_summary",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "config_schema": {
+        "norm_reference": "float",
+        "energy_reference": "float",
+        "zero_threshold": "float",
+        "max_flatten_elements": "integer"
+      },
+      "default_values": {
+        "norm_reference": 10.0,
+        "energy_reference": 100.0,
+        "zero_threshold": 1e-12,
+        "max_flatten_elements": 100000
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Read-only participant_params leakage risk summary. It does not save raw updates and is not image reconstruction."
+    },
+    {
       "name": "opacus_feasibility",
       "type": "future_work_check",
       "family": "privacy_probe",

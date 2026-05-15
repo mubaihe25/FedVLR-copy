@@ -1,0 +1,34 @@
+{
+  "model": "FedAvg",
+  "dataset": "KU",
+  "scenario": "custom",
+  "type": "SecurityMatrixSmoke",
+  "comment": "security_sidecar_build_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.05,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "security_sidecar_build": {
+      "output_dir": "outputs/security_sidecars/KU",
+      "target_item_count": 10,
+      "max_members": 1000,
+      "max_non_members": 1000
+    }
+  }
+}

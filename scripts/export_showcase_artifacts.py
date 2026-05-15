@@ -31,6 +31,11 @@ PRIVACY_SIDECAR_PATTERNS = (
     "gradient_leakage*.json",
     "gradient_inversion*.json",
     "opacus_feasibility*.json",
+    "update_leakage_risk*.json",
+    "recommendation_manipulation*.json",
+    "membership_labels*.json",
+    "security_sidecar_manifest*.json",
+    "target_items*.json",
     "privacy_attack_summaries*.json",
     "privacy_risk_summary*.json",
     "targeted_poisoning*.json",
@@ -185,13 +190,21 @@ def collect_nested_values(obj: Any, key_names: Sequence[str]) -> List[Any]:
 def find_nested_payload(obj: Any, key_names: Sequence[str]) -> Optional[Dict[str, Any]]:
     normalized_names = {normalize_key(name) for name in key_names}
     if isinstance(obj, dict):
-        for key, value in obj.items():
-            if normalize_key(key) in normalized_names and isinstance(value, dict):
-                return value
-        for type_key in ("probe_type", "check_type", "defense_type", "attack_type"):
+        for type_key in (
+            "probe_type",
+            "check_type",
+            "defense_type",
+            "attack_type",
+            "metric_type",
+            "sidecar_type",
+            "metadata_type",
+        ):
             payload_type = normalize_key(obj.get(type_key, ""))
             if payload_type in normalized_names:
                 return obj
+        for key, value in obj.items():
+            if normalize_key(key) in normalized_names and isinstance(value, dict):
+                return value
         for value in obj.values():
             found = find_nested_payload(value, key_names)
             if found is not None:
@@ -504,6 +517,18 @@ def extract_attack_defense_summary(
         payload = find_nested_payload(bundle.sources + bundle.sidecar_json, names)
         return payload or {"status": "not_available", "summary_type": names[0]}
 
+    def first_sidecar(
+        bundles: Sequence[Optional[ExperimentBundle]],
+        names: Sequence[str],
+    ) -> Dict[str, Any]:
+        for bundle in bundles:
+            if bundle is None:
+                continue
+            payload = find_nested_payload(bundle.sources + bundle.sidecar_json, names)
+            if payload:
+                return payload
+        return {"status": "not_available", "summary_type": names[0]}
+
     if not (baseline_bundle and attack_bundle and defense_bundle):
         source_bundle = result_bundle or attack_bundle or defense_bundle or baseline_bundle
         return {
@@ -523,6 +548,10 @@ def extract_attack_defense_summary(
             "preference_poisoning": attack_sidecar(
                 source_bundle,
                 ["preference_poisoning", "preference_poisoning_attack"],
+            ),
+            "recommendation_manipulation": first_sidecar(
+                [source_bundle],
+                ["recommendation_manipulation"],
             ),
             "note": "baseline/attack/defense dirs were not all provided; comparison artifact is structural only.",
             "warnings": ["baseline-dir, attack-dir, and defense-dir are required for comparison metrics"],
@@ -588,6 +617,10 @@ def extract_attack_defense_summary(
         "preference_poisoning": attack_sidecar(
             attack_bundle,
             ["preference_poisoning", "preference_poisoning_attack"],
+        ),
+        "recommendation_manipulation": first_sidecar(
+            [attack_bundle, defense_bundle, baseline_bundle],
+            ["recommendation_manipulation"],
         ),
         "note": "Recovery is computed as (defense - attack) / (baseline - attack) when all Recall@50/NDCG@50 values are available.",
         "warnings": warnings,
@@ -764,6 +797,27 @@ def extract_recommendation_comparison(
 ) -> Dict[str, Any]:
     warnings: List[str] = []
     comparison_mode = bool(baseline_bundle and attack_bundle and defense_bundle)
+    source_bundles = [
+        bundle
+        for bundle in (result_bundle, defense_bundle, attack_bundle, baseline_bundle)
+        if bundle is not None
+    ]
+    sidecar_sources: List[Any] = []
+    for bundle in source_bundles:
+        sidecar_sources.extend(bundle.sources)
+        sidecar_sources.extend(bundle.sidecar_json)
+    manipulation_summary = find_nested_payload(
+        sidecar_sources,
+        ["recommendation_manipulation"],
+    ) or {"status": "not_available", "summary_type": "recommendation_manipulation"}
+    target_items = []
+    for source in sidecar_sources:
+        for value in collect_nested_values(source, ["target_items"]):
+            if isinstance(value, list):
+                target_items = value
+                break
+        if target_items:
+            break
     if comparison_mode:
         baseline, baseline_warnings = read_recommendations(baseline_bundle)
         attack, attack_warnings = read_recommendations(attack_bundle)
@@ -791,6 +845,8 @@ def extract_recommendation_comparison(
         "baseline_recommendations": baseline,
         "attacked_recommendations": attack,
         "defended_recommendations": defense,
+        "recommendation_manipulation": manipulation_summary,
+        "target_items": target_items,
         "note": "TopK files are read as long-form rows when item_id/rank/score exist, or as legacy wide top_N rows with null scores.",
         "warnings": warnings,
     }
@@ -994,6 +1050,23 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         sources,
         ["opacus_feasibility", "opacus_feasibility_check"],
     )
+    update_leakage = find_nested_payload(
+        sources,
+        ["update_leakage_risk", "update_leakage_risk_probe"],
+    )
+    sidecar_manifest = find_nested_payload(
+        sources,
+        ["security_sidecars", "security_sidecar_manifest"],
+    )
+    membership_labels = find_nested_payload(sources, ["membership_labels"])
+    if membership_labels is None:
+        for source in sources:
+            if isinstance(source, dict) and {
+                "member_pairs",
+                "non_member_pairs",
+            }.issubset(source.keys()):
+                membership_labels = source
+                break
 
     payload = {
         "client_update_norm": client_update_norm or not_available_probe("client_update_norm"),
@@ -1001,7 +1074,12 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         "preference_inference": preference or not_available_probe("preference_inference"),
         "gradient_leakage": gradient or not_available_probe("gradient_leakage"),
         "gradient_inversion": gradient_inversion or not_available_probe("gradient_inversion_toy"),
+        "update_leakage_risk": update_leakage or not_available_probe("update_leakage_risk"),
         "opacus_feasibility": opacus_feasibility or not_available_probe("opacus_feasibility"),
+        "security_sidecar_manifest": sidecar_manifest
+        or {"status": "not_available", "summary_type": "security_sidecar_manifest"},
+        "membership_labels": membership_labels
+        or {"status": "not_available", "summary_type": "membership_labels"},
         "risk_level": overall_risk_level(
             [
                 client_update_norm or {},
@@ -1009,6 +1087,7 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
                 preference or {},
                 gradient or {},
                 gradient_inversion or {},
+                update_leakage or {},
             ]
         ),
         "warnings": warnings,
@@ -1023,8 +1102,12 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         warnings.append("gradient_leakage_probe result not found in this experiment")
     if gradient_inversion is None:
         warnings.append("gradient_inversion_toy result not found in this experiment")
+    if update_leakage is None:
+        warnings.append("update_leakage_risk result not found in this experiment")
     if opacus_feasibility is None:
         warnings.append("opacus_feasibility result not found in this experiment")
+    if sidecar_manifest is None:
+        warnings.append("security_sidecar_manifest not found in this experiment")
 
     if include_synthetic:
         try:
@@ -1038,6 +1121,9 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
                 run_synthetic_smoke as run_preference_smoke,
             )
             from privacy_eval.run_gradient_inversion_toy import run_gradient_inversion_toy
+            from privacy_eval.update_leakage_risk_probe import (
+                run_synthetic_smoke as run_update_leakage_smoke,
+            )
 
             payload["synthetic_demo"] = {
                 "demo_only": True,
@@ -1046,6 +1132,7 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
                 "preference_inference": run_preference_smoke(),
                 "gradient_leakage": run_gradient_smoke(),
                 "gradient_inversion": run_gradient_inversion_toy(steps=5),
+                "update_leakage_risk": run_update_leakage_smoke(),
             }
         except Exception as exc:
             warnings.append("synthetic privacy smoke failed: {}".format(exc))

@@ -60,3 +60,11 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 - `privacy_eval/opacus_feasibility_check.py` 只是 future-work 可行性检测，不应接入主训练循环。
 - `secure_aggregation_sim` 是 simulation-only 成对 mask 抵消摘要；真实 secure aggregation 与 Krum/median/update_filter 这类需要逐客户端更新的鲁棒过滤应作为不同运行模式描述。
 - 新增或修改安全能力后，至少运行 compileall、相关 JSON 解析、模块 synthetic smoke，并汇报是否改动训练主链路、API/前端、依赖和 `git status`。
+
+## Realized Security Sidecars
+
+- `privacy_eval/generate_membership_labels.py` may generate `membership_labels.json` from real train/test splits. For KU, `split_label=0` is member and `split_label=2` is non-member.
+- `privacy_eval.run_membership_probe_from_recommendations` must only report available membership inference when labels plus score/rank evidence exist. Legacy TopK rank scores are proxy-only and must keep `score_source=rank_based_proxy`.
+- `privacy_eval/recommendation_manipulation_metrics.py` reports TopK overlap/Jaccard/list-shift and optional target exposure. Without `target_items.json`, target-hit fields must remain unavailable/null rather than inferred.
+- `privacy_eval/update_leakage_risk_probe.py` can run as a default-off privacy metric over real `participant_params`; it must not persist raw updates and must not be described as image reconstruction.
+- `scripts/build_security_sidecars.py` writes ignored output under `outputs/security_sidecars/<dataset>/`; do not commit ordinary generated sidecars unless explicitly requested.
