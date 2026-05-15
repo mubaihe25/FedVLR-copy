@@ -560,10 +560,13 @@ def extract_attack_defense_summary(
 def find_topk_file(result_dir: Optional[Path]) -> Optional[Path]:
     if result_dir is None or not result_dir.exists():
         return None
-    candidates: List[Path] = []
     direct_dir = result_dir / "recommend_topk"
     if direct_dir.exists():
-        candidates.extend(direct_dir.rglob("*.csv"))
+        direct_candidates = list(direct_dir.rglob("*.csv"))
+        topk_file = newest_file(direct_candidates)
+        if topk_file is not None:
+            return topk_file
+    candidates: List[Path] = []
     for path in result_dir.rglob("*.csv"):
         lower_path = str(path).lower()
         if "recommend_topk" in lower_path or "top" in path.name.lower():
