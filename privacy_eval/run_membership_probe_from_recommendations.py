@@ -13,7 +13,7 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -70,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path for writing the membership inference summary JSON.",
     )
     parser.add_argument(
+        "--membership-labels",
+        help="Optional membership_labels.json with real member/non-member labels.",
+    )
+    parser.add_argument(
         "--score-direction",
         default="higher_is_member",
         choices=["higher_is_member", "lower_is_member", "loss_lower_is_member"],
@@ -111,6 +115,10 @@ def row_value(row: Dict[str, Any], keys: Sequence[str]) -> Optional[Any]:
     return None
 
 
+def item_key(user_id: Any, item_id: Any) -> str:
+    return "{}::{}".format(str(user_id), str(item_id))
+
+
 def to_float(value: Any) -> Optional[float]:
     if value in (None, ""):
         return None
@@ -131,6 +139,107 @@ def parse_membership_label(value: Any) -> Optional[bool]:
     return None
 
 
+def row_label_from_sets(
+    row: Dict[str, Any],
+    member_pairs: Set[str],
+    non_member_pairs: Set[str],
+) -> Optional[bool]:
+    user_id = row_value(row, ("user_id", "client_id", "id", "user"))
+    item_id = row_value(row, ("item_id", "item", "recommended_item", "recommended_item_id"))
+    if user_id is None or item_id is None:
+        return None
+    pair_key = item_key(user_id, item_id)
+    if pair_key in member_pairs:
+        return True
+    if pair_key in non_member_pairs:
+        return False
+    return None
+
+
+def add_pair_from_value(target: Set[str], value: Any, default_user_id: Any = None) -> None:
+    if value is None:
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            add_pair_from_value(target, item, default_user_id=default_user_id)
+        return
+    if isinstance(value, dict):
+        user_id = value.get("user_id", value.get("client_id", value.get("id", default_user_id)))
+        item_id = value.get("item_id", value.get("item", value.get("recommended_item_id")))
+        if user_id is not None and item_id is not None:
+            target.add(item_key(user_id, item_id))
+            return
+        for key, item in value.items():
+            if isinstance(item, bool):
+                continue
+            if isinstance(item, (list, tuple, set)):
+                for nested_item in item:
+                    add_pair_from_value(target, {"user_id": key, "item_id": nested_item})
+            else:
+                add_pair_from_value(target, item, default_user_id=key)
+        return
+    if isinstance(value, str) and "::" in value:
+        target.add(value)
+        return
+    if default_user_id is not None:
+        target.add(item_key(default_user_id, value))
+
+
+def load_membership_label_sets(path: Optional[Path]) -> Tuple[Set[str], Set[str]]:
+    if path is None or not path.exists():
+        return set(), set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return set(), set()
+
+    member_pairs: Set[str] = set()
+    non_member_pairs: Set[str] = set()
+
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            label = parse_membership_label(row_value(item, LABEL_KEYS))
+            target = member_pairs if label is True else non_member_pairs if label is False else None
+            if target is not None:
+                add_pair_from_value(target, item)
+        return member_pairs, non_member_pairs
+
+    if not isinstance(payload, dict):
+        return member_pairs, non_member_pairs
+
+    for key in ("members", "member", "member_samples", "member_pairs"):
+        add_pair_from_value(member_pairs, payload.get(key))
+    for key in (
+        "non_members",
+        "non_member",
+        "non_member_samples",
+        "non_member_pairs",
+        "negative_samples",
+    ):
+        add_pair_from_value(non_member_pairs, payload.get(key))
+
+    labels = payload.get("labels")
+    if isinstance(labels, dict):
+        for pair_key, label_value in labels.items():
+            label = parse_membership_label(label_value)
+            if label is True:
+                member_pairs.add(str(pair_key))
+            elif label is False:
+                non_member_pairs.add(str(pair_key))
+    elif isinstance(labels, list):
+        for item in labels:
+            if not isinstance(item, dict):
+                continue
+            label = parse_membership_label(row_value(item, LABEL_KEYS))
+            target = member_pairs if label is True else non_member_pairs if label is False else None
+            if target is not None:
+                add_pair_from_value(target, item)
+
+    return member_pairs, non_member_pairs
+
+
 def score_from_row(row: Dict[str, Any]) -> Optional[float]:
     score = to_float(row_value(row, SCORE_KEYS))
     if score is not None:
@@ -141,11 +250,19 @@ def score_from_row(row: Dict[str, Any]) -> Optional[float]:
     return 1.0 / max(rank, 1.0)
 
 
-def split_member_scores(rows: Iterable[Dict[str, Any]]) -> Tuple[List[float], List[float]]:
+def split_member_scores(
+    rows: Iterable[Dict[str, Any]],
+    member_pairs: Optional[Set[str]] = None,
+    non_member_pairs: Optional[Set[str]] = None,
+) -> Tuple[List[float], List[float]]:
+    member_pairs = member_pairs or set()
+    non_member_pairs = non_member_pairs or set()
     member_scores: List[float] = []
     non_member_scores: List[float] = []
     for row in rows:
         label = parse_membership_label(row_value(row, LABEL_KEYS))
+        if label is None:
+            label = row_label_from_sets(row, member_pairs, non_member_pairs)
         score = score_from_row(row)
         if label is None or score is None:
             continue
@@ -154,6 +271,43 @@ def split_member_scores(rows: Iterable[Dict[str, Any]]) -> Tuple[List[float], Li
         else:
             non_member_scores.append(score)
     return member_scores, non_member_scores
+
+
+def is_top_item_column(key: str) -> bool:
+    normalized = normalize_key(key)
+    return normalized.startswith("top") and normalized[3:].isdigit()
+
+
+def expand_legacy_topk_rows(
+    rows: Iterable[Dict[str, Any]],
+    member_pairs: Set[str],
+    non_member_pairs: Set[str],
+) -> List[Dict[str, Any]]:
+    expanded_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        top_columns = sorted(
+            [key for key in row.keys() if is_top_item_column(str(key))],
+            key=lambda key: int(normalize_key(key)[3:] or "0"),
+        )
+        if not top_columns:
+            expanded_rows.append(row)
+            continue
+        user_id = row_value(row, ("id", "user_id", "client_id", "user"))
+        for rank, column in enumerate(top_columns, start=1):
+            item_id = row.get(column)
+            if item_id in (None, ""):
+                continue
+            expanded_row = {
+                "user_id": user_id,
+                "item_id": item_id,
+                "rank": rank,
+                "score": 1.0 / float(rank),
+            }
+            label = row_label_from_sets(expanded_row, member_pairs, non_member_pairs)
+            if label is not None:
+                expanded_row["is_member"] = "1" if label else "0"
+            expanded_rows.append(expanded_row)
+    return expanded_rows
 
 
 def not_available(reason: str, source_files: Sequence[Path]) -> Dict[str, Any]:
@@ -177,9 +331,18 @@ def run_probe_from_rows(
     rows: Iterable[Dict[str, Any]],
     score_direction: str = "higher_is_member",
     source_files: Optional[Sequence[Path]] = None,
+    member_pairs: Optional[Set[str]] = None,
+    non_member_pairs: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     source_files = list(source_files or [])
-    member_scores, non_member_scores = split_member_scores(rows)
+    member_pairs = member_pairs or set()
+    non_member_pairs = non_member_pairs or set()
+    expanded_rows = expand_legacy_topk_rows(rows, member_pairs, non_member_pairs)
+    member_scores, non_member_scores = split_member_scores(
+        expanded_rows,
+        member_pairs=member_pairs,
+        non_member_pairs=non_member_pairs,
+    )
     if not member_scores or not non_member_scores:
         return not_available(
             "real membership inference probe requires member and non-member rows with score or rank",
@@ -190,6 +353,7 @@ def run_probe_from_rows(
     summary = probe.evaluate_scores(member_scores, non_member_scores)
     summary["status"] = "available"
     summary["input_source"] = "recommendation_rows"
+    summary["rank_based_proxy_score"] = True
     summary["source_files"] = [str(path) for path in source_files]
     return summary
 
@@ -210,16 +374,20 @@ def collect_recommendation_files(
 def run_probe_from_recommendation_files(
     recommendation_files: Sequence[Path],
     score_direction: str = "higher_is_member",
+    membership_labels: Optional[Path] = None,
 ) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     for path in recommendation_files:
         rows.extend(read_csv_rows(path))
     if not rows:
         return not_available("recommendation file could not be parsed", recommendation_files)
+    member_pairs, non_member_pairs = load_membership_label_sets(membership_labels)
     return run_probe_from_rows(
         rows,
         score_direction=score_direction,
         source_files=recommendation_files,
+        member_pairs=member_pairs,
+        non_member_pairs=non_member_pairs,
     )
 
 
@@ -250,6 +418,7 @@ def main() -> int:
     if args.smoke:
         summary = run_synthetic_recommendation_smoke()
     else:
+        membership_labels = Path(args.membership_labels) if args.membership_labels else None
         files = collect_recommendation_files(
             args.recommendation_file,
             args.recommendation_dir,
@@ -257,6 +426,7 @@ def main() -> int:
         summary = run_probe_from_recommendation_files(
             files,
             score_direction=args.score_direction,
+            membership_labels=membership_labels,
         )
 
     if args.output_json:

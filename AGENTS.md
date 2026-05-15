@@ -29,7 +29,10 @@
 - 不要默认运行耗时训练；需要训练时先明确轮数、模型、数据集和输出用途。
 - `scripts/export_showcase_artifacts.py` 只能汇总已有结果文件并生成展示 artifact，不应修改训练主链路、TopK 字段、CSV/JSON 既有字段或 API 协议。
 - 后续实验如需真实推荐展示数据，优先通过 launcher 的 `training_params.save_recommended_topk: true` 或兼容别名启用测试集 TopK 导出；导出目录应落在本次结果目录下的 `recommend_topk/`。
-- `privacy_eval.run_membership_probe_from_recommendations` 只能基于已有推荐文件中的真实 membership label 与 score/rank 生成 summary；输入不足时输出 `not_available`，不要编造成员推断结果。
+- `privacy_eval.run_membership_probe_from_recommendations` 只能基于已有推荐文件中的真实 membership label 与 score/rank 生成 summary；legacy TopK 宽表必须配合 `membership_labels.json` 才能用 rank proxy score，输入不足时输出 `not_available`，不要编造成员推断结果。
+- `secure_aggregation_sim` 只能表述为 simulation-only 成对 mask 抵消摘要，不是生产级密码学安全聚合协议。
+- `targeted_poisoning` / `preference_poisoning` 只能表述为 update-space proxy，不是完整 target-item/backdoor 投毒链路。
+- `privacy_eval.run_gradient_leakage_demo` 只能生成 synthetic tensor / image-like tensor 风险摘要，不代表 FedVLR 原始图像恢复能力。
 
 ## 指标口径
 

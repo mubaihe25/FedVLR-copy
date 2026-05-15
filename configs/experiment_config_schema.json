@@ -107,6 +107,40 @@
     "attack_params": {
       "type": "object",
       "description": "按模块名分组的攻击参数，例如 {\"poisoning_attack\": {\"poisoning_mix_rule\": \"round_robin\", \"poisoning_attack_scale\": 2.0}}。poisoning_attack 当前只支持非定向投毒，不支持 target item/backdoor 式定向投毒。",
+      "properties": {
+        "targeted_poisoning": {
+          "type": "object",
+          "description": "Experimental update-space targeted/preference poisoning proxy. It is not a full target-item backdoor.",
+          "properties": {
+            "target_item_ids": {
+              "type": "array",
+              "items": { "type": ["integer", "string"] }
+            },
+            "targeted_item_ids": {
+              "type": "array",
+              "items": { "type": ["integer", "string"] }
+            },
+            "poisoning_target_item_ids": {
+              "type": "array",
+              "items": { "type": ["integer", "string"] }
+            },
+            "targeted_poisoning_strength": { "type": "number" },
+            "preference_poisoning_strength": { "type": "number" },
+            "preference_direction": {
+              "type": "string",
+              "enum": ["increase", "decrease", "promote", "demote", "positive", "negative", "up", "down"],
+              "default": "increase"
+            },
+            "targeted_allow_proxy_fallback": { "type": "boolean", "default": true }
+          },
+          "additionalProperties": true
+        },
+        "preference_poisoning": {
+          "type": "object",
+          "description": "Alias parameter group for targeted_poisoning.",
+          "additionalProperties": true
+        }
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true
@@ -143,6 +177,16 @@
             "noise_multiplier": { "type": "number", "minimum": 0 },
             "noise_std": { "type": "number", "minimum": 0 },
             "seed": { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
+        "secure_aggregation_sim": {
+          "type": "object",
+          "description": "Simulation-only pairwise mask cancellation summary. It is not production cryptographic secure aggregation.",
+          "properties": {
+            "secure_agg_seed": { "type": "integer" },
+            "secure_agg_mask_std": { "type": "number", "minimum": 0 },
+            "secure_agg_max_elements": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": true
         }

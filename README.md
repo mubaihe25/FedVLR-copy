@@ -86,10 +86,16 @@ python scripts/export_showcase_artifacts.py --result-dir path\to\result --output
 
 通过 `scripts/launch_experiment.py` 启动的后续实验，可以在 `training_params` 中显式设置 `save_recommended_topk: true`（或兼容别名 `output_topk` / `save_recommend_topk` / `topk_export`），训练结束后会额外做一次测试集 TopK 推荐导出并写入本次结果目录下的 `recommend_topk/`。该导出不改变已有 TopK 宽表字段。
 
-如果已有推荐文件包含真实 membership label 和 score/rank，可用轻量 runner 生成成员推断 probe summary；只有 legacy `top_0 ... top_k` item id 而没有 label/score 时会输出 `not_available`，不会伪造隐私攻击数值：
+如果已有推荐文件包含真实 membership label 和 score/rank，可用轻量 runner 生成成员推断 probe summary；legacy `top_0 ... top_k` 宽表必须配合 `membership_labels.json` 才能用 rank proxy score 生成结果，没有 label 时会输出 `not_available`，不会伪造隐私攻击数值：
 
 ```powershell
 python -m privacy_eval.run_membership_probe_from_recommendations --recommendation-dir path\to\recommend_topk --output-json path\to\membership_inference_summary.json
+```
+
+梯度泄露演示可以用独立 synthetic runner 生成 `gradient_leakage_summary.json` 结构；该输出只用于风险展示，不代表真实 FedVLR 原图恢复：
+
+```powershell
+python -m privacy_eval.run_gradient_leakage_demo --demo-kind image --output-json path\to\gradient_leakage_summary.json
 ```
 
 ## 指标口径
@@ -107,12 +113,12 @@ CSV 输出可包含逐轮记录、`best_summary` 和 `tail_mean_summary`。`best
 当前已实现和可展示的安全相关能力包括：
 
 - 投毒攻击和恶意更新模拟；
-- 更新缩放、符号翻转、模型替换和统一非定向投毒；
-- 范数裁剪、更新过滤、截尾均值、逐元素 Median、Krum 风格客户端选择和 central DP-style noise 防御；
+- 更新缩放、符号翻转、模型替换、统一非定向投毒，以及 experimental targeted/preference poisoning proxy；
+- 范数裁剪、更新过滤、截尾均值、逐元素 Median、Krum 风格客户端选择、central DP-style noise 防御，以及 secure_aggregation_sim 成对 mask 抵消模拟；
 - 客户端更新范数、score-based membership_inference_probe、gradient_leakage_probe 等风险观测。
 
 当前训练链路没有正式实现差分隐私、同态加密或安全聚合。`dp_noise` 只是聚合前裁剪加 Gaussian noise 的 central DP-style noise defense，没有 formal privacy accountant；相关内容不能写成完整差分隐私能力。
-`membership_inference_probe` 只是基于 score/rank/loss 差异的轻量成员推断观测；`gradient_leakage_probe` 是图像/多模态梯度泄露风险 demo，不代表完整 DLG/InvertingGrad 或 FedVLR 原始图像恢复能力。
+`secure_aggregation_sim` 只是成对 mask 抵消的 simulation-only summary，不是生产级密码学安全聚合协议。`targeted_poisoning` / `preference_poisoning` 只是 update-space proxy，不是完整 target-item/backdoor 投毒。`membership_inference_probe` 只是基于 score/rank/loss 差异的轻量成员推断观测；`gradient_leakage_probe` 是图像/多模态梯度泄露风险 demo，不代表完整 DLG/InvertingGrad 或 FedVLR 原始图像恢复能力。
 
 ## 轻量验证
 

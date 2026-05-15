@@ -27,8 +27,12 @@ ARTIFACT_NAMES = {
 
 PRIVACY_SIDECAR_PATTERNS = (
     "membership_inference*.json",
+    "gradient_leakage*.json",
     "privacy_attack_summaries*.json",
     "privacy_risk_summary*.json",
+    "targeted_poisoning*.json",
+    "secure_aggregation*.json",
+    "defense_trace*.json",
 )
 
 
@@ -479,12 +483,20 @@ def active_module_type(bundle: ExperimentBundle, field_name: str, active_name: s
 
 
 def extract_attack_defense_summary(
+    result_bundle: Optional[ExperimentBundle],
     baseline_bundle: Optional[ExperimentBundle],
     attack_bundle: Optional[ExperimentBundle],
     defense_bundle: Optional[ExperimentBundle],
 ) -> Dict[str, Any]:
     warnings: List[str] = []
     if not (baseline_bundle and attack_bundle and defense_bundle):
+        source_bundle = result_bundle or attack_bundle or defense_bundle or baseline_bundle
+        targeted_poisoning = None
+        if source_bundle is not None:
+            targeted_poisoning = find_nested_payload(
+                source_bundle.sources + source_bundle.sidecar_json,
+                ["targeted_poisoning", "preference_poisoning", "targeted_poisoning_attack"],
+            )
         return {
             "baseline": None,
             "attack": None,
@@ -493,8 +505,10 @@ def extract_attack_defense_summary(
             "ndcg_drop": None,
             "recall_recovery_rate": None,
             "ndcg_recovery_rate": None,
-            "attack_type": None,
-            "defense_type": None,
+            "attack_type": active_module_type(source_bundle, "attack_type", "active_attacks") if source_bundle else None,
+            "defense_type": active_module_type(source_bundle, "defense_type", "active_defenses") if source_bundle else None,
+            "targeted_poisoning": targeted_poisoning
+            or {"status": "not_available", "summary_type": "targeted_poisoning"},
             "note": "baseline/attack/defense dirs were not all provided; comparison artifact is structural only.",
             "warnings": ["baseline-dir, attack-dir, and defense-dir are required for comparison metrics"],
         }
@@ -552,6 +566,11 @@ def extract_attack_defense_summary(
         "ndcg_recovery_rate": ndcg_recovery_rate,
         "attack_type": active_module_type(attack_bundle, "attack_type", "active_attacks"),
         "defense_type": active_module_type(defense_bundle, "defense_type", "active_defenses"),
+        "targeted_poisoning": find_nested_payload(
+            attack_bundle.sources + attack_bundle.sidecar_json,
+            ["targeted_poisoning", "preference_poisoning", "targeted_poisoning_attack"],
+        )
+        or {"status": "not_available", "summary_type": "targeted_poisoning"},
         "note": "Recovery is computed as (defense - attack) / (baseline - attack) when all Recall@50/NDCG@50 values are available.",
         "warnings": warnings,
     }
@@ -795,6 +814,7 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
         bundle.summary,
     ]
     defense_sources: List[Any] = []
+    defense_sources.extend(bundle.sidecar_json)
     for source in metadata_sources:
         if isinstance(source, dict):
             for key in ("defense_summaries", "defense_metrics", "defense_outputs"):
@@ -848,6 +868,17 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
             for value in collect_nested_values(source, ["rejected_client_count", "total_rejected_clients"])
         ]
     )
+    named_defense_summaries = {
+        "median": find_nested_payload(defense_sources, ["median", "mediandefense"]),
+        "krum": find_nested_payload(defense_sources, ["krum", "krumdefense"]),
+        "dp_noise": find_nested_payload(defense_sources, ["dp_noise", "dpnoise", "dpnoisedefense"]),
+        "secure_aggregation_sim": find_nested_payload(
+            defense_sources,
+            ["secure_aggregation_sim", "secure_agg_sim", "secureaggregationsim"],
+        ),
+    }
+    if not any(named_defense_summaries.values()):
+        warnings.append("named defense summaries for median/krum/dp_noise/secure_aggregation_sim not found")
 
     return {
         "defense_type": defense_type,
@@ -857,6 +888,14 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
         "trimmed_updates": int(trimmed_updates) if trimmed_updates is not None else None,
         "selected_indices": selected_indices,
         "rejected_client_count": int(rejected_client_count) if rejected_client_count is not None else None,
+        "median": named_defense_summaries["median"]
+        or {"status": "not_available", "summary_type": "median"},
+        "krum": named_defense_summaries["krum"]
+        or {"status": "not_available", "summary_type": "krum"},
+        "dp_noise": named_defense_summaries["dp_noise"]
+        or {"status": "not_available", "summary_type": "dp_noise"},
+        "secure_aggregation_sim": named_defense_summaries["secure_aggregation_sim"]
+        or {"status": "not_available", "summary_type": "secure_aggregation_sim"},
         "note": "Defense trace is assembled from metadata.defense_summaries and round defense metrics when available.",
         "warnings": warnings,
     }
@@ -1005,7 +1044,7 @@ def export_artifacts(args: argparse.Namespace) -> Dict[str, Path]:
         "dataset_profile": extract_dataset_profile(primary_bundle),
         "metrics_summary": extract_metrics_summary(primary_bundle),
         "attack_defense_summary": extract_attack_defense_summary(
-            baseline_bundle, attack_bundle, defense_bundle
+            result_bundle, baseline_bundle, attack_bundle, defense_bundle
         ),
         "recommendation_comparison": extract_recommendation_comparison(
             result_bundle, baseline_bundle, attack_bundle, defense_bundle

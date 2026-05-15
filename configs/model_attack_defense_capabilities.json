@@ -280,6 +280,35 @@
       "notes": "统一非定向投毒入口；按 round_robin 将 malicious_clients 分流到更新缩放、符号翻转、模型替换三种子策略，每个恶意客户端只命中一种策略。初赛阶段不包含 target item/backdoor 式定向投毒。"
     },
     {
+      "name": "targeted_poisoning",
+      "aliases": ["preference_poisoning", "targeted_poisoning_attack", "preference_poisoning_attack"],
+      "type": "experimental_active_attack",
+      "family": "poisoning",
+      "category": "targeted_poisoning_proxy",
+      "strategy": "update_space_preference_direction",
+      "display_category": "poisoning attack",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "mutates_participant_params": true,
+      "is_read_only": false,
+      "proxy_only": true,
+      "config_schema": {
+        "target_item_ids": "list[integer]",
+        "targeted_poisoning_strength": "float",
+        "preference_poisoning_strength": "float",
+        "preference_direction": "string",
+        "targeted_allow_proxy_fallback": "boolean"
+      },
+      "default_values": {
+        "targeted_poisoning_strength": 0.05,
+        "preference_direction": "increase",
+        "targeted_allow_proxy_fallback": true
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Experimental update-space proxy only. It does not implement a full target-item backdoor or raw interaction poisoning pipeline."
+    },
+    {
       "name": "client_preference_leakage_probe",
       "type": "read_only_attack_like_probe",
       "family": "privacy_probe",
@@ -448,6 +477,33 @@
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
       "notes": "Experimental central DP-style noise defense only. It has no formal privacy accountant and must not be described as complete differential privacy."
+    },
+    {
+      "name": "secure_aggregation_sim",
+      "aliases": ["secure_agg_sim"],
+      "type": "simulation_only_defense",
+      "family": "secure_aggregation",
+      "category": "privacy_preserving_aggregation_sim",
+      "strategy": "pairwise_mask_cancellation_sim",
+      "display_category": "secure aggregation simulation",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "simulation_only": true,
+      "config_schema": {
+        "secure_agg_seed": "integer",
+        "secure_agg_mask_std": "float",
+        "secure_agg_max_elements": "integer"
+      },
+      "default_values": {
+        "secure_agg_seed": 42,
+        "secure_agg_mask_std": 1.0,
+        "secure_agg_max_elements": 10000
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Simulation-only pairwise mask cancellation summary. This is not a production cryptographic secure aggregation protocol."
     },
     {
       "name": "robust_defense",
@@ -663,6 +719,8 @@
     "attack_and_robust_defense_clip_then_trimmed_mean",
     "poisoning_trimmed_mean",
     "poisoning_norm_clip",
+    "targeted_poisoning",
+    "secure_aggregation_sim",
     "model_replacement",
     "model_replacement_trimmed_mean",
     "scale_norm_clip"

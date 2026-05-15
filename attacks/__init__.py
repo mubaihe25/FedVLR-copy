@@ -6,6 +6,7 @@ from attacks.client_update_scale_attack import ClientUpdateScaleAttack
 from attacks.model_replacement_attack import ModelReplacementAttack
 from attacks.poisoning_attack import PoisoningAttack
 from attacks.sign_flip_attack import SignFlipAttack
+from attacks.targeted_poisoning_attack import TargetedPoisoningAttack
 from attacks.noop_attack import NoOpAttack
 from attacks.registry import get_attack, list_attacks, register_attack
 
@@ -16,6 +17,7 @@ __all__ = [
     "ModelReplacementAttack",
     "PoisoningAttack",
     "SignFlipAttack",
+    "TargetedPoisoningAttack",
     "NoOpAttack",
     "register_attack",
     "get_attack",
