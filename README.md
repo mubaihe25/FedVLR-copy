@@ -151,6 +151,7 @@ Recent backend security work adds three real-data-oriented sidecar paths:
 - `privacy_eval/recommendation_manipulation_metrics.py` compares baseline/attack/defense TopK lists and optionally reads `target_items.json`. Without target items it only reports overlap/Jaccard/list-shift metrics.
 - `privacy_eval/update_leakage_risk_probe.py` is a read-only privacy metric over real `participant_params`. It reports update norms, sparsity, energy, diversity, and modality-risk buckets, but it does not save raw updates and is not image reconstruction.
 - `scripts/build_security_sidecars.py` writes `membership_labels.json`, `target_items.json`, `item_metadata_stub.json`, and `security_sidecar_manifest.json` under `outputs/security_sidecars/<dataset>/`.
+- `scripts/export_showcase_artifacts.py` can enrich `recommendation_comparison.json` recommendation rows from local `datasets/<dataset>/item_metadata.json` with `title`, `category`, and `image_url`. This is a local metadata join only: it does not download images, does not change TopK fields, and leaves missing metadata as `null`. Baseline/attack comparison can be exported without a defense directory; defense and recovery fields remain unavailable/null.
 
 Keep these boundaries explicit: item metadata stubs have no real semantic title/tag; membership inference with rank-only TopK is a proxy; recommendation manipulation without target items is list-change analysis only; update leakage risk is a summary probe, not DLG/InvertingGrad reconstruction.
 

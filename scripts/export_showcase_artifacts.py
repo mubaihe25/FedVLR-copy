@@ -536,6 +536,53 @@ def extract_attack_defense_summary(
                 return payload
         return {"status": "not_available", "summary_type": names[0]}
 
+    if baseline_bundle and attack_bundle and defense_bundle is None:
+        baseline_metrics = extract_metrics_summary(baseline_bundle)
+        attack_metrics = extract_metrics_summary(attack_bundle)
+
+        def pair(metrics: Dict[str, Any]) -> Dict[str, Any]:
+            return {"recall50": metrics.get("recall50"), "ndcg50": metrics.get("ndcg50")}
+
+        def drop(base_value: Optional[float], attack_value: Optional[float]) -> Optional[float]:
+            if base_value is None or attack_value is None:
+                return None
+            return base_value - attack_value
+
+        baseline = pair(baseline_metrics)
+        attack = pair(attack_metrics)
+        warnings.extend("baseline: {}".format(warning) for warning in baseline_metrics.get("warnings", []))
+        warnings.extend("attack: {}".format(warning) for warning in attack_metrics.get("warnings", []))
+        warnings.append("defense-dir not provided; defense comparison and recovery unavailable")
+        return {
+            "baseline": baseline,
+            "attack": attack,
+            "defense": None,
+            "recall_drop": drop(baseline["recall50"], attack["recall50"]),
+            "ndcg_drop": drop(baseline["ndcg50"], attack["ndcg50"]),
+            "recall_recovery_rate": None,
+            "ndcg_recovery_rate": None,
+            "attack_type": active_module_type(attack_bundle, "attack_type", "active_attacks"),
+            "defense_type": None,
+            "targeted_poisoning": attack_sidecar(
+                attack_bundle,
+                ["targeted_poisoning", "targeted_poisoning_attack"],
+            ),
+            "preference_poisoning": attack_sidecar(
+                attack_bundle,
+                ["preference_poisoning", "preference_poisoning_attack"],
+            ),
+            "target_interaction_injection": attack_sidecar(
+                attack_bundle,
+                ["target_interaction_injection", "target_interaction_injection_planner", "target_promotion"],
+            ),
+            "recommendation_manipulation": first_sidecar(
+                [attack_bundle, result_bundle, baseline_bundle],
+                ["recommendation_manipulation"],
+            ),
+            "note": "Defense dir was not provided; baseline-vs-attack drops are reported and recovery is unavailable.",
+            "warnings": warnings,
+        }
+
     if not (baseline_bundle and attack_bundle and defense_bundle):
         source_bundle = result_bundle or attack_bundle or defense_bundle or baseline_bundle
         return {
@@ -660,6 +707,75 @@ def find_topk_file(result_dir: Optional[Path]) -> Optional[Path]:
     return newest_file(unique_candidates)
 
 
+def dataset_name_for_bundle(bundle: Optional[ExperimentBundle]) -> Optional[str]:
+    if bundle is None:
+        return None
+    for source in (bundle.summary, bundle.result):
+        if isinstance(source, dict):
+            dataset = source.get("dataset")
+            if dataset not in (None, ""):
+                return str(dataset)
+    return None
+
+
+def metadata_category(item: Dict[str, Any]) -> Optional[str]:
+    for key in ("category", "main_category", "target_group", "tag", "group"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    categories = item.get("categories")
+    if isinstance(categories, list):
+        for value in categories:
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def normalize_item_metadata_entry(item: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    title = item.get("title") or item.get("item_title") or item.get("name")
+    image_url = item.get("image_url") or item.get("image") or item.get("img_url")
+    return {
+        "title": str(title) if title not in (None, "") else None,
+        "category": metadata_category(item),
+        "image_url": str(image_url) if image_url not in (None, "") else None,
+    }
+
+
+def read_item_metadata(
+    dataset: Optional[str],
+) -> Tuple[Dict[str, Dict[str, Optional[str]]], Optional[Path], List[str]]:
+    if not dataset:
+        return {}, None, []
+    metadata_path = ROOT / "datasets" / dataset / "item_metadata.json"
+    if not metadata_path.exists():
+        return {}, metadata_path, []
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+    except Exception as exc:  # noqa: BLE001
+        return {}, metadata_path, ["item_metadata.json could not be parsed: {}".format(exc)]
+
+    raw_items: Any = payload.get("items") if isinstance(payload, dict) else payload
+    if isinstance(raw_items, dict):
+        iterable_items = []
+        for item_id, value in raw_items.items():
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("itemID", item_id)
+                iterable_items.append(item)
+    elif isinstance(raw_items, list):
+        iterable_items = [item for item in raw_items if isinstance(item, dict)]
+    else:
+        return {}, metadata_path, ["item_metadata.json has no readable items list"]
+
+    metadata: Dict[str, Dict[str, Optional[str]]] = {}
+    for item in iterable_items:
+        item_id = first_non_none([item.get("itemID"), item.get("item_id"), item.get("id")])
+        if item_id in (None, ""):
+            continue
+        metadata[str(item_id)] = normalize_item_metadata_entry(item)
+    return metadata, metadata_path, []
+
+
 def first_row_value(row: Dict[str, str], keys: Sequence[str]) -> Optional[str]:
     for key in keys:
         if key in row and row.get(key) not in (None, ""):
@@ -713,6 +829,8 @@ def parse_long_recommendations(rows: List[Dict[str, str]]) -> List[Dict[str, Any
                     first_row_value(row, ("score", "pred_score", "prediction_score", "rank_score"))
                 ),
                 "title": first_row_value(row, ("title", "item_title", "name")),
+                "category": first_row_value(row, ("category", "main_category", "target_group")),
+                "image_url": first_row_value(row, ("image_url", "img_url", "image")),
                 "reason": first_row_value(row, ("reason", "explanation")),
                 "status": first_row_value(row, ("status",)) or "unknown",
                 "client_id": first_row_value(row, user_keys),
@@ -738,12 +856,30 @@ def parse_wide_topk_recommendations(row: Dict[str, str]) -> List[Dict[str, Any]]
                 "item_id": str(item_id),
                 "score": score_for_top_column(row, column, rank - 1),
                 "title": None,
+                "category": None,
+                "image_url": None,
                 "reason": None,
                 "status": "unknown",
                 "client_id": client_id,
             }
         )
     return recommendations
+
+
+def enrich_recommendations_with_metadata(
+    recommendations: List[Dict[str, Any]],
+    metadata: Dict[str, Dict[str, Optional[str]]],
+) -> None:
+    if not metadata:
+        return
+    for recommendation in recommendations:
+        item_id = recommendation.get("item_id")
+        item_metadata = metadata.get(str(item_id)) if item_id not in (None, "") else None
+        if not item_metadata:
+            continue
+        for key in ("title", "category", "image_url"):
+            if recommendation.get(key) in (None, "") and item_metadata.get(key) not in (None, ""):
+                recommendation[key] = item_metadata.get(key)
 
 
 def read_recommendations(bundle: Optional[ExperimentBundle]) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -764,7 +900,9 @@ def read_recommendations(bundle: Optional[ExperimentBundle]) -> Tuple[List[Dict[
         recommendations = parse_wide_topk_recommendations(rows[0])
     if not recommendations:
         return [], ["TopK recommendation file has no readable recommendation rows: {}".format(topk_path)]
-    return recommendations, []
+    metadata, _, metadata_warnings = read_item_metadata(dataset_name_for_bundle(bundle))
+    enrich_recommendations_with_metadata(recommendations, metadata)
+    return recommendations, metadata_warnings
 
 
 def apply_recommendation_statuses(
@@ -811,7 +949,7 @@ def extract_recommendation_comparison(
     defense_bundle: Optional[ExperimentBundle],
 ) -> Dict[str, Any]:
     warnings: List[str] = []
-    comparison_mode = bool(baseline_bundle and attack_bundle and defense_bundle)
+    comparison_mode = bool(baseline_bundle and attack_bundle)
     source_bundles = [
         bundle
         for bundle in (result_bundle, defense_bundle, attack_bundle, baseline_bundle)
@@ -836,7 +974,11 @@ def extract_recommendation_comparison(
     if comparison_mode:
         baseline, baseline_warnings = read_recommendations(baseline_bundle)
         attack, attack_warnings = read_recommendations(attack_bundle)
-        defense, defense_warnings = read_recommendations(defense_bundle)
+        defense, defense_warnings = (
+            read_recommendations(defense_bundle)
+            if defense_bundle is not None
+            else ([], ["defense-dir not provided; defense recommendations unavailable"])
+        )
         warnings.extend("baseline: {}".format(warning) for warning in baseline_warnings)
         warnings.extend("attack: {}".format(warning) for warning in attack_warnings)
         warnings.extend("defense: {}".format(warning) for warning in defense_warnings)
