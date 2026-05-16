@@ -44,6 +44,7 @@ PRIVACY_SIDECAR_PATTERNS = (
     "targeted_poisoning*.json",
     "preference_poisoning*.json",
     "target_interaction_injection*.json",
+    "target_interaction_plan*.json",
     "malicious_interaction_plan*.json",
     "secure_aggregation*.json",
     "multi_krum*.json",

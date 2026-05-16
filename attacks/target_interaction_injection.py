@@ -1,9 +1,10 @@
-"""Target interaction injection planner.
+"""Target interaction injection planner and default-off local-data hook.
 
-This module does not mutate FedVLR training data. It plans which malicious
-clients would receive synthetic positive interactions for target items and
-writes a sidecar plan that can be inspected or wired into a future data-loader
-hook. The current implementation is planner-only by design.
+By default this module is planner-only. When the attack is enabled in a run and
+``target_interaction_injection.enabled=true`` is passed through the unified
+config, it injects target positive interactions into malicious clients'
+in-memory local dataloaders before local training. It never rewrites dataset
+files on disk.
 """
 
 from __future__ import annotations
@@ -31,14 +32,14 @@ DEFAULT_SPLIT_FIELD = "split_label"
 
 
 class TargetInteractionInjectionPlanner(BaseAttack):
-    """Planner-only target promotion via local interaction injection."""
+    """Target promotion planner with an optional in-memory local-data hook."""
 
     attack_family = "poisoning"
     attack_category = "target_interaction_injection_planner"
     attack_strategy = "target_item_positive_interaction_plan"
     attack_display_category = "poisoning attack"
     mutates_participant_params = False
-    is_read_only = True
+    is_read_only = False
 
     def __init__(
         self,
@@ -46,6 +47,28 @@ class TargetInteractionInjectionPlanner(BaseAttack):
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__(name=name, config=config)
+        self.enabled = bool(
+            self.config.get(
+                "target_interaction_injection_enabled",
+                self.config.get("enabled", False),
+            )
+        )
+        self.target_item_ids = [
+            str(item)
+            for item in self._as_list(
+                self.config.get(
+                    "target_item_ids",
+                    self.config.get("targeted_item_ids", []),
+                )
+            )
+        ]
+        self.injection_ratio = float(self.config.get("injection_ratio", 0.0) or 0.0)
+        self.max_injections_per_client = int(
+            self.config.get("max_injections_per_client", 5) or 5
+        )
+        self.injected_clients: List[str] = []
+        self.injected_interactions: List[Dict[str, Any]] = []
+        self.warnings: List[str] = []
         self.last_summary: Dict[str, Any] = self._summary_from_config()
 
     @staticmethod
@@ -57,26 +80,156 @@ class TargetInteractionInjectionPlanner(BaseAttack):
         return [value]
 
     def _summary_from_config(self) -> Dict[str, Any]:
-        target_item_ids = [str(item) for item in self._as_list(self.config.get("target_item_ids"))]
         return {
             **self.semantic_metadata(),
             "attack_type": "target_interaction_injection",
-            "status": "planner_only",
-            "proxy_only": True,
-            "target_item_ids": target_item_ids,
-            "target_item_count": len(target_item_ids),
+            "status": "hook_enabled" if self.enabled else "planner_only",
+            "proxy_only": not self.enabled,
+            "hook_enabled": self.enabled,
+            "target_item_ids": list(self.target_item_ids),
+            "target_item_count": len(self.target_item_ids),
             "target_item_strategy": self.config.get("target_item_strategy", "explicit_or_high_frequency"),
-            "injection_ratio": self.config.get("injection_ratio"),
+            "injection_ratio": self.injection_ratio,
             "malicious_client_count": None,
             "planned_interaction_count": 0,
-            "requires_training_data_hook": True,
-            "does_not_modify_training_data": True,
+            "injected_client_count": 0,
+            "injected_interaction_count": 0,
+            "requires_training_data_hook": not self.enabled,
+            "does_not_modify_training_data": not self.enabled,
+            "mutates_local_training_data": self.enabled,
             "note": (
-                "Planner-only target item promotion. It does not modify FedVLR local "
-                "training samples until a future data-loader hook consumes the plan."
+                "Default-off target item promotion. With enabled=true it mutates "
+                "only in-memory malicious client dataloaders for the current run; "
+                "dataset files are not rewritten."
             ),
-            "warnings": ["standalone planner only; no training data was modified"],
+            "warnings": (
+                []
+                if self.enabled
+                else ["planner only; no training data was modified"]
+            ),
         }
+
+    @staticmethod
+    def _loader_columns(client_loader: Any) -> Tuple[Optional[str], Optional[str]]:
+        dataset = getattr(client_loader, "dataset", None)
+        return getattr(dataset, "uid_field", None), getattr(dataset, "iid_field", None)
+
+    def _valid_target_items(self, client_loader: Any) -> List[int]:
+        dataset = getattr(client_loader, "dataset", None)
+        item_num = getattr(dataset, "item_num", None)
+        valid_items: List[int] = []
+        for raw_item in self.target_item_ids:
+            try:
+                item_id = int(raw_item)
+            except (TypeError, ValueError):
+                self.warnings.append("target item is not an integer internal item id: {}".format(raw_item))
+                continue
+            if item_num is not None and not (0 <= item_id < int(item_num)):
+                self.warnings.append("target item out of range for local dataset: {}".format(raw_item))
+                continue
+            valid_items.append(item_id)
+        return valid_items
+
+    def before_client_train(
+        self,
+        client_id: Any,
+        client_loader: Any,
+        round_state: MutableMapping[str, Any],
+    ) -> Any:
+        if not self.enabled:
+            return client_loader
+        malicious_clients = {str(value) for value in round_state.get("malicious_clients", [])}
+        client_id_str = str(client_id)
+        if client_id_str not in malicious_clients:
+            return client_loader
+        if self.injection_ratio <= 0:
+            self.warnings.append("injection_ratio <= 0; no target interactions injected")
+            return client_loader
+
+        try:
+            import pandas as pd
+        except Exception as exc:  # noqa: BLE001
+            self.warnings.append("pandas unavailable for target interaction hook: {}".format(exc))
+            return client_loader
+
+        dataset = getattr(client_loader, "dataset", None)
+        if dataset is None or not hasattr(dataset, "df"):
+            self.warnings.append("client loader has no mutable dataset.df")
+            return client_loader
+        uid_field, iid_field = self._loader_columns(client_loader)
+        if not uid_field or not iid_field:
+            self.warnings.append("client loader missing uid/iid fields")
+            return client_loader
+        valid_targets = self._valid_target_items(client_loader)
+        if not valid_targets:
+            return client_loader
+
+        df = dataset.df
+        existing_items = set(df[iid_field].astype(int).tolist()) if iid_field in df else set()
+        candidate_targets = [item for item in valid_targets if item not in existing_items]
+        if not candidate_targets:
+            self.warnings.append("all target items already present for client {}".format(client_id_str))
+            return client_loader
+
+        base_count = max(1, len(df))
+        injection_count = max(1, int(round(base_count * self.injection_ratio)))
+        injection_count = min(injection_count, self.max_injections_per_client, len(candidate_targets))
+        rows = []
+        for item_id in candidate_targets[:injection_count]:
+            new_row = {column: None for column in df.columns}
+            new_row[uid_field] = int(client_id) if str(client_id).isdigit() else client_id
+            new_row[iid_field] = int(item_id)
+            rows.append(new_row)
+
+        if not rows:
+            return client_loader
+        dataset.df = pd.concat([df, pd.DataFrame(rows, columns=df.columns)], ignore_index=True)
+        dataset.inter_num = len(dataset.df)
+        history = getattr(client_loader, "history_items_per_u", None)
+        if isinstance(history, dict):
+            history.setdefault(int(client_id) if str(client_id).isdigit() else client_id, set()).update(
+                row[iid_field] for row in rows
+            )
+        if hasattr(client_loader, "all_items"):
+            current_items = list(getattr(client_loader, "all_items", []))
+            for row in rows:
+                if row[iid_field] not in current_items:
+                    current_items.append(row[iid_field])
+            client_loader.all_items = current_items
+        if hasattr(client_loader, "all_items_set"):
+            client_loader.all_items_set = set(getattr(client_loader, "all_items_set", set())) | {
+                row[iid_field] for row in rows
+            }
+
+        self.injected_clients.append(client_id_str)
+        for row in rows:
+            self.injected_interactions.append(
+                {
+                    "user_id": str(row[uid_field]),
+                    "item_id": str(row[iid_field]),
+                    "rating": 1.0,
+                    "source": "in_memory_target_injection_hook",
+                }
+            )
+        self.last_summary = self._summary_from_config()
+        self.last_summary.update(
+            {
+                "malicious_client_ids": sorted(malicious_clients),
+                "malicious_client_count": len(malicious_clients),
+                "injected_clients": sorted(set(self.injected_clients)),
+                "injected_client_count": len(set(self.injected_clients)),
+                "injected_interaction_count": len(self.injected_interactions),
+                "planned_interaction_count": len(self.injected_interactions),
+                "injected_interactions": list(self.injected_interactions),
+                "status": "hook_active",
+                "proxy_only": False,
+                "requires_training_data_hook": False,
+                "does_not_modify_training_data": False,
+                "warnings": sorted(set(self.warnings)),
+            }
+        )
+        round_state.setdefault("attack_outputs", {})[self.name] = dict(self.last_summary)
+        return client_loader
 
     def before_round(
         self, round_state: MutableMapping[str, Any]
@@ -86,6 +239,10 @@ class TargetInteractionInjectionPlanner(BaseAttack):
             {
                 "malicious_client_ids": malicious_clients,
                 "malicious_client_count": len(malicious_clients),
+                "injected_clients": sorted(set(self.injected_clients)),
+                "injected_client_count": len(set(self.injected_clients)),
+                "injected_interaction_count": len(self.injected_interactions),
+                "injected_interactions": list(self.injected_interactions),
             }
         )
         round_state.setdefault("attack_outputs", {})[self.name] = dict(self.last_summary)
@@ -122,6 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--hook-smoke", action="store_true")
     return parser
 
 
@@ -320,6 +478,66 @@ def run_smoke(output_json: Path) -> Dict[str, Any]:
     )
 
 
+def run_hook_smoke(output_json: Path) -> Dict[str, Any]:
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import pandas as pd
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "attack_type": "target_interaction_injection",
+            "status": "not_available",
+            "hook_smoke_available": False,
+            "warnings": ["pandas unavailable for hook smoke: {}".format(exc)],
+        }
+
+    class FakeDataset:
+        uid_field = DEFAULT_USER_FIELD
+        iid_field = DEFAULT_ITEM_FIELD
+        item_num = 8
+
+        def __init__(self) -> None:
+            self.df = pd.DataFrame(
+                [
+                    {DEFAULT_USER_FIELD: 1, DEFAULT_ITEM_FIELD: 0, "rating": 1.0},
+                    {DEFAULT_USER_FIELD: 1, DEFAULT_ITEM_FIELD: 4, "rating": 1.0},
+                ]
+            )
+            self.inter_num = len(self.df)
+
+    class FakeLoader:
+        def __init__(self) -> None:
+            self.dataset = FakeDataset()
+            self.history_items_per_u = {1: {0, 4}}
+            self.all_items = [0, 4]
+            self.all_items_set = {0, 4}
+
+    loader = FakeLoader()
+    attack = TargetInteractionInjectionPlanner(
+        config={
+            "enabled": True,
+            "target_item_ids": ["2", "3"],
+            "injection_ratio": 1.0,
+            "max_injections_per_client": 2,
+        }
+    )
+    before_count = len(loader.dataset.df)
+    updated_loader = attack.before_client_train(
+        client_id=1,
+        client_loader=loader,
+        round_state={"malicious_clients": [1]},
+    )
+    summary = attack.collect_metrics()
+    summary.update(
+        {
+            "hook_smoke_available": True,
+            "row_count_before": before_count,
+            "row_count_after": len(updated_loader.dataset.df),
+            "dataset_file_modified": False,
+        }
+    )
+    return summary
+
+
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -331,7 +549,9 @@ def write_json(path: Path, payload: Dict[str, Any]) -> None:
 def main() -> int:
     args = build_parser().parse_args()
     output_json = Path(args.output_json)
-    if args.smoke:
+    if args.hook_smoke:
+        summary = run_hook_smoke(output_json)
+    elif args.smoke:
         summary = run_smoke(output_json)
     else:
         summary = build_interaction_injection_plan(

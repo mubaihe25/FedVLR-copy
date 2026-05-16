@@ -142,8 +142,13 @@
         },
         "target_interaction_injection": {
           "type": "object",
-          "description": "Planner-only target item positive interaction injection. It does not modify local training data without a future data-loader hook.",
+          "description": "Default-off target item positive interaction injection. Without enabled=true it is planner-only; with enabled=true it mutates only malicious clients' in-memory local dataloaders and never rewrites dataset files.",
           "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, inject target items into malicious clients' in-memory local dataloaders. Defaults to planner-only."
+            },
             "target_item_ids": {
               "type": "array",
               "items": { "type": ["integer", "string"] }
@@ -299,7 +304,11 @@
             "recommendation_file": { "type": "string" },
             "recommendation_dir": { "type": "string" },
             "score_file": { "type": "string" },
+            "checkpoint_path": { "type": "string" },
             "model_checkpoint": { "type": "string" },
+            "model": { "type": "string" },
+            "dataset": { "type": "string" },
+            "output_dir": { "type": "string" },
             "output_csv": { "type": "string" },
             "output_json": { "type": "string" }
           },
@@ -358,8 +367,14 @@
           "type": "object",
           "description": "Read-only candidate item reconstruction from item-like embedding updates. It is not full interaction history recovery or image DLG.",
           "properties": {
-            "topk": { "type": "integer", "minimum": 1 },
-            "min_item_rows": { "type": "integer", "minimum": 2 }
+            "interaction_reconstruction_topk": { "type": "integer", "minimum": 1 },
+            "topk": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Backward-compatible standalone runner alias. Launcher configs should prefer interaction_reconstruction_topk to avoid colliding with evaluator topk."
+            },
+            "min_item_rows": { "type": "integer", "minimum": 2 },
+            "interaction_file": { "type": "string" }
           },
           "additionalProperties": true
         },

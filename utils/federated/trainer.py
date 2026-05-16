@@ -96,6 +96,11 @@ class FederatedTrainer(Trainer):
         total_loss, user_losses = 0, []
         for user in sampled_clients:
             client_loader = train_data.loaders[user]
+            client_loader = self.experiment_hooks.before_client_train(
+                round_index=round_index,
+                client_id=user,
+                client_loader=client_loader,
+            )
             client_model, client_optimizer = self._set_client(user, epoch_idx)
 
             client_losses = self._train_client(

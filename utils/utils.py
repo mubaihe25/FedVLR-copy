@@ -772,9 +772,42 @@ def save_experiment_json_outputs(
     with open(summary_path, "w", encoding="utf-8") as summary_file:
         json.dump(experiment_summary_dict, summary_file, **dump_kwargs)
 
+    sidecar_paths = {}
+    metadata = experiment_result_dict.get("metadata", {}) if isinstance(experiment_result_dict, dict) else {}
+    privacy_summaries = metadata.get("privacy_metric_summaries", {}) if isinstance(metadata, dict) else {}
+    if isinstance(privacy_summaries, dict):
+        sidecar_name_by_probe = {
+            "membership_inference": "membership_inference_summary.json",
+            "update_leakage_risk": "update_leakage_risk_summary.json",
+            "interaction_reconstruction": "interaction_reconstruction_summary.json",
+        }
+        for metric_name, payload in privacy_summaries.items():
+            if not isinstance(payload, dict):
+                continue
+            probe_type = str(payload.get("probe_type") or metric_name).lower()
+            for probe_key, file_name in sidecar_name_by_probe.items():
+                if probe_key in probe_type:
+                    sidecar_path = os.path.join(output_dir, file_name)
+                    with open(sidecar_path, "w", encoding="utf-8") as sidecar_file:
+                        json.dump(payload, sidecar_file, **dump_kwargs)
+                    sidecar_paths[probe_key] = sidecar_path
+
+    attack_summaries = metadata.get("attack_summaries", {}) if isinstance(metadata, dict) else {}
+    if isinstance(attack_summaries, dict):
+        for attack_name, payload in attack_summaries.items():
+            if not isinstance(payload, dict):
+                continue
+            attack_type = str(payload.get("attack_type") or attack_name).lower()
+            if "target_interaction_injection" in attack_type:
+                sidecar_path = os.path.join(output_dir, "target_interaction_plan.json")
+                with open(sidecar_path, "w", encoding="utf-8") as sidecar_file:
+                    json.dump(payload, sidecar_file, **dump_kwargs)
+                sidecar_paths["target_interaction_injection"] = sidecar_path
+
     return {
         "experiment_result_path": detail_path,
         "experiment_summary_path": summary_path,
+        "sidecar_paths": sidecar_paths,
     }
 
 

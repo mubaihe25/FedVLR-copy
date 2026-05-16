@@ -6,8 +6,9 @@ available it uses that score; when only exported TopK ranks are available it
 emits a clearly marked rank proxy; when neither is available it writes rows with
 empty score/rank and a not_available summary.
 
-Checkpoint-based FedVLR scoring is intentionally left as future adapter work
-because model reconstruction requires matching the exact model/data config.
+Checkpoint-based FedVLR scoring is supported for the lightweight FedAvg/FedRAP
+pickle parameter format saved by this repository. Unsupported checkpoints emit a
+feasibility summary instead of guessed scores.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
+import pickle
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -47,9 +50,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--recommendation-dir")
     parser.add_argument("--score-file", action="append", default=[])
     parser.add_argument("--result-dir", help="Optional result dir for auto-discovering sidecars.")
-    parser.add_argument("--model-checkpoint", help="Reserved for future exact-model scoring adapter.")
-    parser.add_argument("--output-csv", required=True)
-    parser.add_argument("--output-json", required=True)
+    parser.add_argument("--checkpoint-path", help="FedVLR saved model parameter pickle.")
+    parser.add_argument("--model-checkpoint", help="Alias for --checkpoint-path.")
+    parser.add_argument("--model", help="Optional model name for checkpoint feasibility reporting.")
+    parser.add_argument("--dataset", help="Optional dataset name for checkpoint feasibility reporting.")
+    parser.add_argument("--output-dir", help="Directory for membership_pair_scores.csv and membership_score_summary.json.")
+    parser.add_argument("--output-csv")
+    parser.add_argument("--output-json")
+    parser.add_argument("--checkpoint-smoke", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     return parser
 
@@ -172,16 +180,222 @@ def build_rank_index(files: Sequence[Path], label_metadata: Dict[str, Any]) -> D
     return index
 
 
+def import_torch() -> Tuple[Any, Optional[str]]:
+    try:
+        import torch  # type: ignore
+
+        return torch, None
+    except Exception as exc:  # noqa: BLE001 - summary should carry the exact blocker.
+        return None, str(exc)
+
+
+def tensor_to_list(value: Any) -> Optional[List[List[float]]]:
+    if value is None:
+        return None
+    if hasattr(value, "weight"):
+        value = getattr(value, "weight")
+    if isinstance(value, dict):
+        value = value.get("weight")
+    if value is None:
+        return None
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        value = detach()
+    cpu = getattr(value, "cpu", None)
+    if callable(cpu):
+        value = cpu()
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        data = tolist()
+    else:
+        data = value
+    if not isinstance(data, list) or not data:
+        return None
+    if data and not isinstance(data[0], list):
+        data = [data]
+    return [[float(item) for item in row] for row in data]
+
+
+def state_value(state: Dict[str, Any], key: str) -> Any:
+    if key in state:
+        return state[key]
+    for candidate, value in state.items():
+        if str(candidate).endswith(key):
+            return value
+    return None
+
+
+def vector_from_state(state: Dict[str, Any], key: str) -> Optional[List[float]]:
+    value = state_value(state, key)
+    if value is None:
+        return None
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        value = detach()
+    cpu = getattr(value, "cpu", None)
+    if callable(cpu):
+        value = cpu()
+    tolist = getattr(value, "tolist", None)
+    data = tolist() if callable(tolist) else value
+    if isinstance(data, list) and data and isinstance(data[0], list):
+        data = data[0]
+    if isinstance(data, list):
+        return [float(item) for item in data]
+    try:
+        return [float(data)]
+    except (TypeError, ValueError):
+        return None
+
+
+def client_state_for_user(client_models: Any, user_id: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(client_models, dict) or user_id in (None, ""):
+        return None
+    candidates = [user_id, str(user_id)]
+    try:
+        candidates.append(int(str(user_id)))
+    except (TypeError, ValueError):
+        pass
+    for candidate in candidates:
+        state = client_models.get(candidate)
+        if isinstance(state, dict):
+            return state
+    return None
+
+
+def sigmoid(value: float) -> float:
+    if value >= 0:
+        z = math.exp(-value)
+        return 1.0 / (1.0 + z)
+    z = math.exp(value)
+    return z / (1.0 + z)
+
+
+def dot(left: Sequence[float], right: Sequence[float]) -> float:
+    return float(sum(float(a) * float(b) for a, b in zip(left, right)))
+
+
+def add_vectors(left: Sequence[float], right: Optional[Sequence[float]]) -> List[float]:
+    if right is None:
+        return [float(value) for value in left]
+    return [float(a) + float(b) for a, b in zip(left, right)]
+
+
+def build_checkpoint_score_index(
+    checkpoint_path: Optional[Path],
+    rows: Sequence[Dict[str, Any]],
+    model: Optional[str] = None,
+    dataset: Optional[str] = None,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    summary = {
+        "checkpoint_scoring_available": False,
+        "checkpoint_path": str(checkpoint_path) if checkpoint_path else None,
+        "model": model,
+        "dataset": dataset,
+        "missing_reason": None,
+        "recommended_adapter_points": [
+            "utils.quick_start._save_model_params stores federated parameter pickle files",
+            "FedAvg/FedRAP-style checkpoints need item_commonality plus per-user affine_output state",
+            "full model reconstruction can be added later through Config + get_model + load_state_dict",
+        ],
+        "scored_pair_count": 0,
+        "ranked_pair_count": 0,
+        "warnings": [],
+    }
+    if checkpoint_path is None:
+        summary["missing_reason"] = "checkpoint path not provided"
+        return {}, summary
+    if not checkpoint_path.exists():
+        summary["missing_reason"] = "checkpoint path does not exist"
+        return {}, summary
+    torch, torch_error = import_torch()
+    if torch is None:
+        summary["missing_reason"] = "torch unavailable for loading checkpoint: {}".format(torch_error)
+        return {}, summary
+
+    try:
+        with checkpoint_path.open("rb") as handle:
+            payload = pickle.load(handle)
+    except Exception as exc:  # noqa: BLE001
+        summary["missing_reason"] = "checkpoint could not be loaded: {}".format(exc)
+        return {}, summary
+    if not isinstance(payload, dict):
+        summary["missing_reason"] = "checkpoint root is not a dict"
+        return {}, summary
+
+    item_commonality = tensor_to_list(payload.get("item_commonality"))
+    client_models = payload.get("client_models")
+    if item_commonality is None:
+        summary["missing_reason"] = "item_commonality weights not found in checkpoint"
+        return {}, summary
+    if not isinstance(client_models, dict):
+        summary["missing_reason"] = "client_models dict not found in checkpoint"
+        return {}, summary
+
+    index: Dict[str, Dict[str, Any]] = {}
+    ranked_pairs = 0
+    for row in rows:
+        user_id = row.get("user_id")
+        item_id = row.get("item_id")
+        try:
+            item_index = int(str(item_id))
+        except (TypeError, ValueError):
+            summary["warnings"].append("non-integer item_id skipped: {}".format(item_id))
+            continue
+        if item_index < 0 or item_index >= len(item_commonality):
+            summary["warnings"].append("item_id out of checkpoint range: {}".format(item_id))
+            continue
+        state = client_state_for_user(client_models, user_id)
+        if state is None:
+            summary["warnings"].append("client model state not found for user_id={}".format(user_id))
+            continue
+        weight = vector_from_state(state, "affine_output.weight")
+        bias = vector_from_state(state, "affine_output.bias") or [0.0]
+        if weight is None:
+            summary["warnings"].append("affine_output.weight missing for user_id={}".format(user_id))
+            continue
+        personality = tensor_to_list(state_value(state, "item_personality.weight"))
+        item_vector = add_vectors(
+            item_commonality[item_index],
+            personality[item_index] if personality is not None and item_index < len(personality) else None,
+        )
+        score = sigmoid(dot(item_vector, weight) + float(bias[0]))
+        all_scores = []
+        for idx, common_vec in enumerate(item_commonality):
+            personal_vec = personality[idx] if personality is not None and idx < len(personality) else None
+            vec = add_vectors(common_vec, personal_vec)
+            all_scores.append(sigmoid(dot(vec, weight) + float(bias[0])))
+        rank = 1 + sum(1 for candidate_score in all_scores if candidate_score > score)
+        ranked_pairs += 1
+        index[pair_lookup_key(user_id, item_id)] = {
+            "score": float(score),
+            "rank": int(rank),
+            "score_source": "checkpoint_model_score",
+        }
+
+    if index:
+        summary["checkpoint_scoring_available"] = True
+        summary["missing_reason"] = None
+    else:
+        summary["missing_reason"] = "no labeled pairs could be scored from this checkpoint"
+    summary["scored_pair_count"] = len(index)
+    summary["ranked_pair_count"] = ranked_pairs
+    return index, summary
+
+
 def enrich_rows(
     rows: Iterable[Dict[str, Any]],
     score_index: Dict[str, Dict[str, Any]],
     rank_index: Dict[str, Dict[str, Any]],
+    checkpoint_index: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
+    checkpoint_index = checkpoint_index or {}
     output: List[Dict[str, Any]] = []
     for row in rows:
         user_id = row.get("user_id")
         item_id = row.get("item_id")
-        payload = score_index.get(pair_lookup_key(user_id, item_id))
+        payload = checkpoint_index.get(pair_lookup_key(user_id, item_id))
+        if payload is None:
+            payload = score_index.get(pair_lookup_key(user_id, item_id))
         if payload is None:
             payload = score_index.get(pair_lookup_key(None, item_id))
         if payload is None:
@@ -206,6 +420,7 @@ def summarize(
     label_metadata: Dict[str, Any],
     warnings: Sequence[str],
     model_checkpoint: Optional[str] = None,
+    checkpoint_summary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     scored = [row for row in rows if row.get("score") not in (None, "")]
     ranked = [row for row in rows if row.get("rank") not in (None, "")]
@@ -215,10 +430,11 @@ def summarize(
     status = "available" if scored and member_count and non_member_count else "not_available"
     if scored and len(scored) < len(rows):
         status = "partial"
-    checkpoint_note = None
-    if model_checkpoint:
-        checkpoint_note = (
-            "model checkpoint scoring adapter is not implemented in this lightweight exporter"
+    checkpoint_summary = checkpoint_summary or {}
+    checkpoint_warning = None
+    if model_checkpoint and not checkpoint_summary.get("checkpoint_scoring_available"):
+        checkpoint_warning = "checkpoint scoring unavailable: {}".format(
+            checkpoint_summary.get("missing_reason") or "unsupported checkpoint"
         )
     return {
         "export_type": "membership_pair_scores",
@@ -229,13 +445,17 @@ def summarize(
         "scored_pair_count": len(scored),
         "ranked_pair_count": len(ranked),
         "score_source": "mixed" if len(sources) > 1 else sources[0] if sources else None,
+        "checkpoint_scoring_available": bool(
+            checkpoint_summary.get("checkpoint_scoring_available", False)
+        ),
+        "checkpoint_scoring": checkpoint_summary or None,
         "label_source": label_metadata.get("label_source"),
         "label_granularity": label_metadata.get("label_granularity"),
-        "warnings": list(warnings) + ([checkpoint_note] if checkpoint_note else []),
+        "warnings": list(warnings) + ([checkpoint_warning] if checkpoint_warning else []),
         "note": (
             "Rows with score_source=score_file use supplied model scores. Rows with "
-            "score_source=rank_proxy use 1/(rank+1) from exported TopK; this is not "
-            "unmasked checkpoint scoring."
+            "score_source=checkpoint_model_score use a supported FedVLR checkpoint. "
+            "Rows with score_source=rank_proxy use 1/(rank+1) from exported TopK."
         ),
     }
 
@@ -263,6 +483,8 @@ def run_export(
     score_files: Sequence[Path],
     recommendation_files: Sequence[Path],
     model_checkpoint: Optional[str] = None,
+    model: Optional[str] = None,
+    dataset: Optional[str] = None,
 ) -> Dict[str, Any]:
     label_metadata = load_membership_labels(membership_labels)
     warnings = list(label_metadata.get("warnings", []))
@@ -271,8 +493,20 @@ def run_export(
         warnings.append("membership labels did not contain member/non-member pairs or items")
     score_index = build_score_index(score_files)
     rank_index = build_rank_index(recommendation_files, label_metadata)
-    output_rows = enrich_rows(rows, score_index, rank_index)
-    summary = summarize(output_rows, label_metadata, warnings, model_checkpoint=model_checkpoint)
+    checkpoint_index, checkpoint_summary = build_checkpoint_score_index(
+        Path(model_checkpoint) if model_checkpoint else None,
+        rows,
+        model=model,
+        dataset=dataset,
+    )
+    output_rows = enrich_rows(rows, score_index, rank_index, checkpoint_index=checkpoint_index)
+    summary = summarize(
+        output_rows,
+        label_metadata,
+        warnings,
+        model_checkpoint=model_checkpoint,
+        checkpoint_summary=checkpoint_summary,
+    )
     summary["membership_labels"] = str(membership_labels)
     summary["score_files"] = [str(path) for path in score_files]
     summary["recommendation_files"] = [str(path) for path in recommendation_files]
@@ -306,12 +540,80 @@ def run_smoke(output_csv: Path, output_json: Path) -> Dict[str, Any]:
     return run_export(labels_path, output_csv, output_json, [score_path], [])
 
 
+def run_checkpoint_smoke(output_csv: Path, output_json: Path) -> Dict[str, Any]:
+    torch, torch_error = import_torch()
+    if torch is None:
+        summary = {
+            "export_type": "membership_pair_scores",
+            "status": "not_available",
+            "checkpoint_scoring_available": False,
+            "warnings": ["torch unavailable for checkpoint smoke: {}".format(torch_error)],
+        }
+        write_csv(output_csv, [])
+        write_json(output_json, summary)
+        return summary
+
+    labels_path = output_json.parent / "membership_labels_for_checkpoint_smoke.json"
+    checkpoint_path = output_json.parent / "fedavg_checkpoint_smoke.pkl"
+    labels_path.parent.mkdir(parents=True, exist_ok=True)
+    labels_path.write_text(
+        json.dumps(
+            {
+                "label_source": "synthetic_checkpoint",
+                "label_granularity": "user_item_pair",
+                "member_pairs": [{"user_id": "1", "item_id": "1"}],
+                "non_member_pairs": [{"user_id": "1", "item_id": "3"}],
+                "warnings": [],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    payload = {
+        "item_commonality": torch.nn.Embedding.from_pretrained(
+            torch.tensor(
+                [[0.0, 0.0], [2.0, 0.0], [0.5, 0.0], [-1.0, 0.0]],
+                dtype=torch.float32,
+            ),
+            freeze=False,
+        ),
+        "client_models": {
+            1: {
+                "affine_output.weight": torch.tensor([[2.0, 0.0]], dtype=torch.float32),
+                "affine_output.bias": torch.tensor([0.0], dtype=torch.float32),
+            }
+        },
+    }
+    with checkpoint_path.open("wb") as handle:
+        pickle.dump(payload, handle)
+    return run_export(
+        labels_path,
+        output_csv,
+        output_json,
+        [],
+        [],
+        model_checkpoint=str(checkpoint_path),
+        model="FedAvg",
+        dataset="synthetic",
+    )
+
+
+def resolve_output_paths(args: argparse.Namespace) -> Tuple[Path, Path]:
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        return output_dir / "membership_pair_scores.csv", output_dir / "membership_score_summary.json"
+    if not args.output_csv or not args.output_json:
+        raise SystemExit("--output-dir or both --output-csv/--output-json are required")
+    return Path(args.output_csv), Path(args.output_json)
+
+
 def main() -> int:
     args = build_parser().parse_args()
-    output_csv = Path(args.output_csv)
-    output_json = Path(args.output_json)
+    output_csv, output_json = resolve_output_paths(args)
     if args.smoke:
         summary = run_smoke(output_csv, output_json)
+    elif args.checkpoint_smoke:
+        summary = run_checkpoint_smoke(output_csv, output_json)
     else:
         discovered_labels, discovered_scores, discovered_recommendations = auto_discover_result_files(
             args.result_dir
@@ -339,7 +641,9 @@ def main() -> int:
             output_json,
             list(dict.fromkeys(score_files)),
             list(dict.fromkeys(recommendation_files)),
-            model_checkpoint=args.model_checkpoint,
+            model_checkpoint=args.checkpoint_path or args.model_checkpoint,
+            model=args.model,
+            dataset=args.dataset,
         )
 
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

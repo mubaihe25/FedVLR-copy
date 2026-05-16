@@ -24,7 +24,7 @@
   "defense_params": {},
   "privacy_params": {
     "interaction_reconstruction_probe": {
-      "topk": 10,
+      "interaction_reconstruction_topk": 10,
       "min_item_rows": 2
     }
   },

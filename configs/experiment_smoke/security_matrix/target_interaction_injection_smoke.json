@@ -22,6 +22,7 @@
   },
   "attack_params": {
     "target_interaction_injection": {
+      "enabled": true,
       "target_item_ids": ["1", "2", "3"],
       "target_item_strategy": "explicit",
       "injection_ratio": 0.1,
@@ -34,7 +35,8 @@
   "privacy_params": {},
   "extra_config": {
     "smoke_only": true,
-    "planner_only": true,
-    "does_not_modify_training_data": true
+    "planner_only": false,
+    "in_memory_hook_enabled": true,
+    "does_not_modify_dataset_files": true
   }
 }

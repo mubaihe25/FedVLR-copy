@@ -424,6 +424,17 @@ class ExperimentHookManager:
         round_state = self._get_round_state(round_index)
         round_state["client_losses"][str(client_id)] = [float(loss) for loss in client_losses]
 
+    def before_client_train(self, round_index: int, client_id: Any, client_loader: Any) -> Any:
+        round_state = self._get_round_state(round_index)
+
+        if self.enabled or self.attacks:
+            for attack in self.attacks:
+                client_loader = attack.before_client_train(
+                    client_id, client_loader, round_state
+                )
+
+        return client_loader
+
     def after_local_train(self, round_index: int, client_id: Any, client_update: Any) -> Any:
         round_state = self._get_round_state(round_index)
 

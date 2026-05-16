@@ -156,8 +156,8 @@ Keep these boundaries explicit: item metadata stubs have no real semantic title/
 
 This backend now includes three additional real-data-oriented adapters:
 
-- `privacy_eval/export_membership_pair_scores.py` exports `membership_pair_scores.csv` and `membership_score_summary.json` from `membership_labels.json` plus supplied score files or exported TopK rank evidence. Real model scores are only used when explicitly supplied; TopK-only evidence is marked as `score_source=rank_proxy`.
-- `attacks/target_interaction_injection.py` builds `malicious_interaction_plan.json` for target item promotion. It is planner-only and does not modify local training samples until a future data-loader hook consumes the plan.
-- `privacy_eval/interaction_reconstruction_probe.py` estimates candidate item ids from item-like embedding updates in `participant_params`. It is interaction candidate reconstruction only, not full user-history recovery and not DLG/image reconstruction.
+- `privacy_eval/export_membership_pair_scores.py` exports `membership_pair_scores.csv` and `membership_score_summary.json` from `membership_labels.json` plus supplied score files, supported FedAvg/FedRAP-style checkpoints, or exported TopK rank evidence. TopK-only evidence is marked as `score_source=rank_proxy`; unsupported checkpoints produce a feasibility summary.
+- `attacks/target_interaction_injection.py` builds `malicious_interaction_plan.json` for target item promotion. By default it remains planner-only; with `target_interaction_injection.enabled=true` it injects target positive interactions only into malicious clients' in-memory local dataloaders and never rewrites dataset files.
+- `privacy_eval/interaction_reconstruction_probe.py` estimates candidate item ids from item-like embedding updates in `participant_params` and can compute `hit_at_k` against dataset train interactions when available. It is interaction candidate reconstruction only, not full user-history recovery and not DLG/image reconstruction.
 
 `privacy_eval/run_membership_probe_from_recommendations.py` should prefer `membership_pair_scores.csv` when available, then fall back to recommendation score/rank rows. Missing labels or missing score/rank evidence must produce `not_available` instead of fabricated attack results.

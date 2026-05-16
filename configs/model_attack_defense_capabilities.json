@@ -311,7 +311,7 @@
     {
       "name": "target_interaction_injection",
       "aliases": ["target_interaction_injection_planner", "target_promotion"],
-      "type": "experimental_planner_only_attack",
+      "type": "experimental_target_injection_attack",
       "family": "poisoning",
       "category": "target_interaction_injection_planner",
       "strategy": "target_item_positive_interaction_plan",
@@ -319,9 +319,11 @@
       "status": "experimental",
       "validation_status": "recommended_unvalidated",
       "mutates_participant_params": false,
-      "is_read_only": true,
-      "planner_only": true,
+      "is_read_only": false,
+      "planner_only_by_default": true,
+      "supports_in_memory_hook": true,
       "config_schema": {
+        "enabled": "boolean",
         "target_item_ids": "list[string]",
         "target_item_strategy": "string",
         "injection_ratio": "float",
@@ -329,6 +331,7 @@
         "max_injections_per_client": "integer"
       },
       "default_values": {
+        "enabled": false,
         "target_item_strategy": "high_frequency",
         "injection_ratio": 0.1,
         "malicious_client_ratio": 0.1,
@@ -336,7 +339,7 @@
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
-      "notes": "Planner-only target item promotion sidecar. It does not modify FedVLR local training samples until a future data-loader hook consumes the plan."
+      "notes": "Default-off target item promotion. Without enabled=true it is planner-only; with enabled=true it injects in-memory positive target interactions for malicious clients only and never rewrites dataset files."
     },
     {
       "name": "client_preference_leakage_probe",

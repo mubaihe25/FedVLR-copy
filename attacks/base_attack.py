@@ -66,6 +66,15 @@ class BaseAttack:
         """Optionally mutate a client's output after local training."""
         return client_update
 
+    def before_client_train(
+        self,
+        client_id: Any,
+        client_loader: Any,
+        round_state: MutableMapping[str, Any],
+    ) -> Any:
+        """Optionally mutate or wrap a client's local dataloader before training."""
+        return client_loader
+
     def before_aggregation(
         self,
         participant_params: MutableMapping[str, Any],

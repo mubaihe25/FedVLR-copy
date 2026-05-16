@@ -40,8 +40,17 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__(name=name, config=config)
-        self.topk = int(self._config_get(config, "topk", 10))
+        self.topk = int(
+            self._config_get(
+                config,
+                "interaction_reconstruction_topk",
+                self._config_get(config, "topk", 10),
+            )
+        )
         self.min_rows = int(self._config_get(config, "min_item_rows", 2))
+        self.train_interaction_file = self._config_get(config, "interaction_file", None)
+        self.dataset = self._config_get(config, "dataset", None)
+        self.data_path = self._config_get(config, "data_path", None)
         self.history: List[Dict[str, Any]] = []
 
     @staticmethod
@@ -131,6 +140,46 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
                     scores[item_id] = max(scores.get(item_id, 0.0), float(value))
         return scores, embedding_tensor_count, client_count
 
+    def _default_train_file(self) -> Optional[Path]:
+        if self.train_interaction_file:
+            return Path(str(self.train_interaction_file))
+        if self.dataset:
+            base = Path(str(self.data_path)) if self.data_path else ROOT / "datasets"
+            return base / str(self.dataset) / "inter.csv"
+        return None
+
+    def _round_train_items(self, round_state: MutableMapping[str, Any]) -> Tuple[Set[str], Dict[str, Any]]:
+        participant_clients = {
+            str(client_id)
+            for client_id in round_state.get("sampled_clients", [])
+        }
+        train_file = self._default_train_file()
+        metadata = {
+            "train_interaction_file": str(train_file) if train_file else None,
+            "train_item_reference_client_count": len(participant_clients),
+            "train_item_reference_available": False,
+        }
+        if train_file is None or not train_file.exists():
+            return set(), metadata
+        try:
+            with train_file.open("r", encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+        except Exception:
+            return set(), metadata
+        items: Set[str] = set()
+        for row in rows:
+            if row.get("split_label") not in (None, "", "0"):
+                continue
+            user_id = row.get("userID") or row.get("user_id") or row.get("user")
+            if participant_clients and str(user_id) not in participant_clients:
+                continue
+            item_id = row.get("itemID") or row.get("item_id") or row.get("item")
+            if item_id not in (None, ""):
+                items.add(str(item_id))
+        metadata["train_item_reference_available"] = bool(items)
+        metadata["train_item_reference_count"] = len(items)
+        return items, metadata
+
     @staticmethod
     def _risk_level(candidate_count: int, hit_at_k: Optional[float]) -> str:
         if hit_at_k is not None and hit_at_k >= 0.5:
@@ -195,8 +244,18 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         participant_params: MutableMapping[str, Any],
         aggregation_result: MutableMapping[str, Any],
     ) -> Dict[str, Any]:
-        del round_state, aggregation_result
-        summary = self.evaluate_updates(participant_params, source="real_participant_params")
+        del aggregation_result
+        train_items, reference_metadata = self._round_train_items(round_state)
+        summary = self.evaluate_updates(
+            participant_params,
+            train_item_ids=train_items,
+            source="real_participant_params",
+        )
+        summary.update(reference_metadata)
+        if summary.get("status") == "available" and summary.get("hit_at_k") is None:
+            summary.setdefault("warnings", []).append(
+                "train interaction reference unavailable; hit_at_k not computed"
+            )
         self.history.append(summary)
         return summary
 
