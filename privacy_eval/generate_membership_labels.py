@@ -196,7 +196,10 @@ def limit_items(items: Set[str], limit: Optional[int], rng: random.Random) -> Li
 
 def infer_dataset_paths(dataset: str, data_root: Optional[str]) -> Tuple[Path, Dict[str, str]]:
     root = Path(data_root) if data_root else ROOT / "datasets"
-    dataset_dir = root / dataset
+    if root.name == dataset and (root / "inter.csv").exists():
+        dataset_dir = root
+    else:
+        dataset_dir = root / dataset
     config = read_simple_yaml(ROOT / "configs" / "datasets" / "{}.yaml".format(dataset.lower()))
     return dataset_dir, config
 

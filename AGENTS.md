@@ -63,6 +63,7 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 
 ## Realized Security Sidecars
 
+- `scripts/convert_amazon2023_to_fedvlr.py` is an offline converter for locally downloaded Amazon Reviews 2023 category files. It must not auto-download Amazon data or images; generated `image_features.npy` is a URL-hash placeholder, not visual embeddings. Ordinary converted `datasets/AMAZON_BEAUTY_POC/` files are ignored and should not be committed.
 - `privacy_eval/generate_membership_labels.py` may generate `membership_labels.json` from real train/test splits. For KU, `split_label=0` is member and `split_label=2` is non-member.
 - `privacy_eval.run_membership_probe_from_recommendations` must only report available membership inference when labels plus score/rank evidence exist. Legacy TopK rank scores are proxy-only and must keep `score_source=rank_based_proxy`.
 - `privacy_eval/recommendation_manipulation_metrics.py` reports TopK overlap/Jaccard/list-shift and optional target exposure. Without `target_items.json`, target-hit fields must remain unavailable/null rather than inferred.

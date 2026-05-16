@@ -144,6 +144,7 @@ Opacus 当前只通过 `privacy_eval/opacus_feasibility_check.py` 做可行性�
 
 Recent backend security work adds three real-data-oriented sidecar paths:
 
+- `scripts/convert_amazon2023_to_fedvlr.py` converts locally downloaded Amazon Reviews 2023 category shards, such as All_Beauty, into FedVLR PoC files under `datasets/AMAZON_BEAUTY_POC/`. It does not download Amazon data or images; `image_features.npy` is a deterministic URL-hash placeholder and must not be described as visual embeddings.
 - `privacy_eval/generate_membership_labels.py` builds `membership_labels.json` from dataset train/test splits. For KU it reads `datasets/KU/inter.csv`, uses `split_label=0` as members and `split_label=2` as non-members, and can filter labels by an exported TopK file.
 - `privacy_eval/run_membership_probe_from_recommendations.py` can consume `membership_labels.json` plus recommendation score/rank fields. Legacy `top_0 ... top_k` files use `score = 1 / (rank + 1)` and must be reported as `rank_based_proxy`.
 - `privacy_eval/recommendation_manipulation_metrics.py` compares baseline/attack/defense TopK lists and optionally reads `target_items.json`. Without target items it only reports overlap/Jaccard/list-shift metrics.

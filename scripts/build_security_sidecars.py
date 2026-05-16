@@ -51,6 +51,8 @@ def write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 def dataset_dir(dataset: str, data_root: Optional[str]) -> Path:
     root = Path(data_root) if data_root else ROOT / "datasets"
+    if root.name == dataset and (root / "inter.csv").exists():
+        return root
     return root / dataset
 
 
@@ -95,9 +97,31 @@ def build_target_items(
     }, warnings
 
 
-def build_item_metadata_stub(dataset: str, data_root: Optional[str]) -> Tuple[Dict[str, Any], List[str]]:
+def build_item_metadata_stub(dataset: str, data_root: Optional[str]) -> Tuple[Dict[str, Any], List[str], bool]:
     warnings: List[str] = []
-    mapping_path = dataset_dir(dataset, data_root) / "i_id_mapping.csv"
+    dataset_path = dataset_dir(dataset, data_root)
+    metadata_path = dataset_path / "item_metadata.json"
+    if metadata_path.exists():
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+            if isinstance(payload, dict):
+                payload = dict(payload)
+                payload.setdefault("metadata_type", "item_metadata")
+                payload.setdefault("source", str(metadata_path))
+                payload.setdefault("warnings", [])
+                return payload, list(payload.get("warnings", [])), True
+            if isinstance(payload, list):
+                return {
+                    "metadata_type": "item_metadata",
+                    "items": payload,
+                    "source": str(metadata_path),
+                    "warnings": [],
+                }, [], True
+            warnings.append("item_metadata.json has unsupported root type")
+        except Exception as exc:  # noqa: BLE001
+            warnings.append("item_metadata.json could not be parsed: {}".format(exc))
+
+    mapping_path = dataset_path / "i_id_mapping.csv"
     rows = read_rows(mapping_path)
     if not rows:
         return {
@@ -105,7 +129,7 @@ def build_item_metadata_stub(dataset: str, data_root: Optional[str]) -> Tuple[Di
             "items": {},
             "warnings": ["i_id_mapping.csv could not be parsed"],
             "note": "stub only; no title/tag semantics are available",
-        }, ["item metadata stub unavailable because i_id_mapping.csv could not be parsed"]
+        }, ["item metadata stub unavailable because i_id_mapping.csv could not be parsed"] + warnings, False
 
     items: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -128,7 +152,7 @@ def build_item_metadata_stub(dataset: str, data_root: Optional[str]) -> Tuple[Di
         "items": items,
         "warnings": warnings,
         "note": "stub only; no title/tag semantics are available",
-    }, warnings
+    }, warnings, False
 
 
 def build_security_sidecars(
@@ -153,11 +177,13 @@ def build_security_sidecars(
         seed=seed,
     )
     target_items, target_warnings = build_target_items(dataset, data_root, target_item_count)
-    item_metadata, metadata_warnings = build_item_metadata_stub(dataset, data_root)
+    item_metadata, metadata_warnings, has_real_metadata = build_item_metadata_stub(dataset, data_root)
 
     membership_path = output_dir / "membership_labels.json"
     target_items_path = output_dir / "target_items.json"
-    item_metadata_path = output_dir / "item_metadata_stub.json"
+    item_metadata_path = output_dir / (
+        "item_metadata.json" if has_real_metadata else "item_metadata_stub.json"
+    )
     manifest_path = output_dir / "security_sidecar_manifest.json"
 
     write_json(membership_path, membership)
@@ -169,13 +195,18 @@ def build_security_sidecars(
         "sidecar_type": "security_sidecars",
         "membership_labels": str(membership_path.resolve()),
         "target_items": str(target_items_path.resolve()),
-        "item_metadata_stub": str(item_metadata_path.resolve()),
+        "item_metadata": str(item_metadata_path.resolve()) if has_real_metadata else None,
+        "item_metadata_stub": None if has_real_metadata else str(item_metadata_path.resolve()),
         "sources": {
             "dataset_dir": str(dataset_dir(dataset, data_root).resolve()),
             "recommend_topk_file": str(recommend_topk_file.resolve()) if recommend_topk_file else None,
         },
         "warnings": list(membership.get("warnings", [])) + target_warnings + metadata_warnings,
-        "note": "item_metadata_stub has no real title/tag semantics; target_items use a high-frequency proxy unless provided by future experiments",
+        "note": (
+            "item_metadata.json is copied from the dataset when available; otherwise "
+            "item_metadata_stub has no real title/tag semantics. target_items use a "
+            "high-frequency proxy unless provided by future experiments"
+        ),
     }
     write_json(manifest_path, manifest)
     return manifest
