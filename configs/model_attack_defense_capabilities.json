@@ -15,7 +15,7 @@
       "name": "FedAvg",
       "family": "single_modal",
       "recommended_dataset": "KU",
-      "supported_datasets": ["KU"],
+      "supported_datasets": ["KU", "AMAZON_BEAUTY_POC"],
       "supports_multi_attack": true,
       "supports_multi_defense": true,
       "validated_attacks": ["model_replacement"],
