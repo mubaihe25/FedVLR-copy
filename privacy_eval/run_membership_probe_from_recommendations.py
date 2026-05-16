@@ -80,6 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory containing recommendation CSV/TSV files.",
     )
     parser.add_argument(
+        "--pair-score-file",
+        action="append",
+        default=[],
+        help="membership_pair_scores.csv from export_membership_pair_scores.py. Can be provided multiple times.",
+    )
+    parser.add_argument(
+        "--result-dir",
+        help="Optional result directory. membership_pair_scores.csv is auto-discovered and used first when present.",
+    )
+    parser.add_argument(
         "--output-json",
         help="Optional path for writing the membership inference summary JSON.",
     )
@@ -324,7 +334,7 @@ def load_membership_label_sets(path: Optional[Path]) -> Tuple[Set[str], Set[str]
 def score_from_row(row: Dict[str, Any]) -> Tuple[Optional[float], Optional[str]]:
     score = to_float(row_value(row, SCORE_KEYS))
     if score is not None:
-        source = row.get("_score_source") or "score"
+        source = row.get("_score_source") or row_value(row, ("score_source",)) or "score"
         return score, str(source)
     rank = to_float(row_value(row, RANK_KEYS))
     if rank is None:
@@ -514,7 +524,9 @@ def run_probe_from_rows(
         if score_sources and set(score_sources.keys()) == {"rank_based_proxy"}
         else "mixed" if len(score_sources) > 1 else next(iter(score_sources), None)
     )
-    summary["rank_based_proxy_score"] = "rank_based_proxy" in score_sources
+    summary["rank_based_proxy_score"] = bool(
+        {"rank_based_proxy", "rank_proxy"}.intersection(score_sources)
+    )
     summary["proxy_only"] = bool(
         summary["rank_based_proxy_score"] or label_granularity == "item_level_proxy"
     )
@@ -535,6 +547,50 @@ def collect_recommendation_files(
             paths.extend(sorted(directory.rglob("*.csv")))
             paths.extend(sorted(directory.rglob("*.tsv")))
     return [path for path in dict.fromkeys(paths) if path.exists() and path.is_file()]
+
+
+def collect_pair_score_files(
+    pair_score_files: Sequence[str],
+    result_dir: Optional[str],
+) -> List[Path]:
+    paths = [Path(path) for path in pair_score_files]
+    if result_dir:
+        directory = Path(result_dir)
+        if directory.exists():
+            paths.extend(sorted(directory.rglob("membership_pair_scores.csv")))
+    return [path for path in dict.fromkeys(paths) if path.exists() and path.is_file()]
+
+
+def run_probe_from_pair_score_files(
+    pair_score_files: Sequence[Path],
+    score_direction: str = "higher_is_member",
+    membership_labels: Optional[Path] = None,
+) -> Dict[str, Any]:
+    rows: List[Dict[str, Any]] = []
+    for path in pair_score_files:
+        rows.extend(read_csv_rows(path))
+    if not rows:
+        return not_available("membership_pair_scores.csv could not be parsed", pair_score_files)
+    label_metadata = load_membership_labels(membership_labels)
+    summary = run_probe_from_rows(
+        rows,
+        score_direction=score_direction,
+        source_files=pair_score_files,
+        member_pairs=label_metadata["member_pairs"],
+        non_member_pairs=label_metadata["non_member_pairs"],
+        member_items=label_metadata["member_items"],
+        non_member_items=label_metadata["non_member_items"],
+        label_source=label_metadata["label_source"] or "membership_pair_scores_csv",
+        label_granularity=label_metadata["label_granularity"],
+        label_warnings=label_metadata["warnings"],
+    )
+    summary["input_source"] = "membership_pair_scores_csv"
+    summary["pair_score_files"] = [str(path) for path in pair_score_files]
+    if membership_labels is not None:
+        summary["membership_labels"] = str(membership_labels)
+    if summary.get("score_source") == "rank_proxy":
+        summary["proxy_only"] = True
+    return summary
 
 
 def run_probe_from_recommendation_files(
@@ -603,15 +659,23 @@ def main() -> int:
         summary = run_synthetic_recommendation_smoke()
     else:
         membership_labels = Path(args.membership_labels) if args.membership_labels else None
-        files = collect_recommendation_files(
-            args.recommendation_file,
-            args.recommendation_dir,
-        )
-        summary = run_probe_from_recommendation_files(
-            files,
-            score_direction=args.score_direction,
-            membership_labels=membership_labels,
-        )
+        pair_score_files = collect_pair_score_files(args.pair_score_file, args.result_dir)
+        if pair_score_files:
+            summary = run_probe_from_pair_score_files(
+                pair_score_files,
+                score_direction=args.score_direction,
+                membership_labels=membership_labels,
+            )
+        else:
+            files = collect_recommendation_files(
+                args.recommendation_file,
+                args.recommendation_dir,
+            )
+            summary = run_probe_from_recommendation_files(
+                files,
+                score_direction=args.score_direction,
+                membership_labels=membership_labels,
+            )
 
     if args.output_json:
         write_json(Path(args.output_json), summary)

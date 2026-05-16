@@ -27,9 +27,12 @@ ARTIFACT_NAMES = {
 
 PRIVACY_SIDECAR_PATTERNS = (
     "membership_inference*.json",
+    "membership_score_summary*.json",
+    "membership_pair_scores*.json",
     "preference_inference*.json",
     "gradient_leakage*.json",
     "gradient_inversion*.json",
+    "interaction_reconstruction*.json",
     "opacus_feasibility*.json",
     "update_leakage_risk*.json",
     "recommendation_manipulation*.json",
@@ -40,6 +43,8 @@ PRIVACY_SIDECAR_PATTERNS = (
     "privacy_risk_summary*.json",
     "targeted_poisoning*.json",
     "preference_poisoning*.json",
+    "target_interaction_injection*.json",
+    "malicious_interaction_plan*.json",
     "secure_aggregation*.json",
     "multi_krum*.json",
     "bulyan*.json",
@@ -198,6 +203,7 @@ def find_nested_payload(obj: Any, key_names: Sequence[str]) -> Optional[Dict[str
             "metric_type",
             "sidecar_type",
             "metadata_type",
+            "export_type",
         ):
             payload_type = normalize_key(obj.get(type_key, ""))
             if payload_type in normalized_names:
@@ -549,6 +555,10 @@ def extract_attack_defense_summary(
                 source_bundle,
                 ["preference_poisoning", "preference_poisoning_attack"],
             ),
+            "target_interaction_injection": attack_sidecar(
+                source_bundle,
+                ["target_interaction_injection", "target_interaction_injection_planner", "target_promotion"],
+            ),
             "recommendation_manipulation": first_sidecar(
                 [source_bundle],
                 ["recommendation_manipulation"],
@@ -617,6 +627,10 @@ def extract_attack_defense_summary(
         "preference_poisoning": attack_sidecar(
             attack_bundle,
             ["preference_poisoning", "preference_poisoning_attack"],
+        ),
+        "target_interaction_injection": attack_sidecar(
+            attack_bundle,
+            ["target_interaction_injection", "target_interaction_injection_planner", "target_promotion"],
         ),
         "recommendation_manipulation": first_sidecar(
             [attack_bundle, defense_bundle, baseline_bundle],
@@ -1037,6 +1051,10 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         sources,
         ["membership_inference", "membership_inference_probe"],
     )
+    membership_pair_scores = find_nested_payload(
+        sources,
+        ["membership_pair_scores", "membership_score_summary"],
+    )
     preference = find_nested_payload(
         sources,
         ["preference_inference", "preference_inference_probe"],
@@ -1053,6 +1071,10 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
     update_leakage = find_nested_payload(
         sources,
         ["update_leakage_risk", "update_leakage_risk_probe"],
+    )
+    interaction_reconstruction = find_nested_payload(
+        sources,
+        ["interaction_reconstruction", "interaction_reconstruction_probe"],
     )
     sidecar_manifest = find_nested_payload(
         sources,
@@ -1071,10 +1093,14 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
     payload = {
         "client_update_norm": client_update_norm or not_available_probe("client_update_norm"),
         "membership_inference": membership or not_available_probe("membership_inference"),
+        "membership_pair_scores": membership_pair_scores
+        or {"status": "not_available", "summary_type": "membership_pair_scores"},
         "preference_inference": preference or not_available_probe("preference_inference"),
         "gradient_leakage": gradient or not_available_probe("gradient_leakage"),
         "gradient_inversion": gradient_inversion or not_available_probe("gradient_inversion_toy"),
         "update_leakage_risk": update_leakage or not_available_probe("update_leakage_risk"),
+        "interaction_reconstruction": interaction_reconstruction
+        or not_available_probe("interaction_reconstruction"),
         "opacus_feasibility": opacus_feasibility or not_available_probe("opacus_feasibility"),
         "security_sidecar_manifest": sidecar_manifest
         or {"status": "not_available", "summary_type": "security_sidecar_manifest"},
@@ -1088,6 +1114,7 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
                 gradient or {},
                 gradient_inversion or {},
                 update_leakage or {},
+                interaction_reconstruction or {},
             ]
         ),
         "warnings": warnings,
@@ -1096,6 +1123,8 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         warnings.append("client_update_norm not found in this experiment")
     if membership is None:
         warnings.append("membership_inference_probe result not found in this experiment")
+    if membership_pair_scores is None:
+        warnings.append("membership_pair_scores summary not found in this experiment")
     if preference is None:
         warnings.append("preference_inference_probe result not found in this experiment")
     if gradient is None:
@@ -1104,6 +1133,8 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         warnings.append("gradient_inversion_toy result not found in this experiment")
     if update_leakage is None:
         warnings.append("update_leakage_risk result not found in this experiment")
+    if interaction_reconstruction is None:
+        warnings.append("interaction_reconstruction result not found in this experiment")
     if opacus_feasibility is None:
         warnings.append("opacus_feasibility result not found in this experiment")
     if sidecar_manifest is None:
@@ -1124,6 +1155,9 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
             from privacy_eval.update_leakage_risk_probe import (
                 run_synthetic_smoke as run_update_leakage_smoke,
             )
+            from privacy_eval.interaction_reconstruction_probe import (
+                run_synthetic_smoke as run_interaction_reconstruction_smoke,
+            )
 
             payload["synthetic_demo"] = {
                 "demo_only": True,
@@ -1133,6 +1167,7 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
                 "gradient_leakage": run_gradient_smoke(),
                 "gradient_inversion": run_gradient_inversion_toy(steps=5),
                 "update_leakage_risk": run_update_leakage_smoke(),
+                "interaction_reconstruction": run_interaction_reconstruction_smoke(),
             }
         except Exception as exc:
             warnings.append("synthetic privacy smoke failed: {}".format(exc))

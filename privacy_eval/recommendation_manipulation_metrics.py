@@ -180,6 +180,15 @@ def target_hit_rate(recommendations: Optional[Dict[str, List[str]]], target_item
     return float(hits / len(recommendations))
 
 
+def target_exposure_count(
+    recommendations: Optional[Dict[str, List[str]]],
+    target_items: Set[str],
+) -> Optional[int]:
+    if recommendations is None or not target_items:
+        return None
+    return int(sum(len(target_items.intersection(items)) for items in recommendations.values()))
+
+
 def best_target_rank(items: Sequence[str], target_items: Set[str], missing_rank: int) -> int:
     ranks = [index + 1 for index, item in enumerate(items) if item in target_items]
     return min(ranks) if ranks else missing_rank
@@ -203,6 +212,22 @@ def target_rank_shift(
         right_rank = best_target_rank(right[user], target_items, missing_rank)
         shifts.append(left_rank - right_rank)
     return float(sum(shifts) / len(shifts))
+
+
+def average_target_rank(
+    recommendations: Optional[Dict[str, List[str]]],
+    target_items: Set[str],
+    topk: int,
+) -> Optional[float]:
+    if recommendations is None or not target_items:
+        return None
+    ranks = [
+        best_target_rank(items, target_items, topk + 1)
+        for items in recommendations.values()
+    ]
+    if not ranks:
+        return None
+    return float(sum(ranks) / len(ranks))
 
 
 def risk_level(
@@ -254,8 +279,21 @@ def compute_recommendation_manipulation(
     target_hit_baseline = target_hit_rate(baseline, target_set)
     target_hit_attack = target_hit_rate(attack, target_set)
     target_hit_defense = target_hit_rate(defense, target_set)
+    target_exposure_baseline = target_exposure_count(baseline, target_set)
+    target_exposure_attack = target_exposure_count(attack, target_set)
+    target_exposure_defense = target_exposure_count(defense, target_set)
     rank_shift_attack = target_rank_shift(baseline, attack, target_set, topk)
     rank_shift_defense = target_rank_shift(attack, defense, target_set, topk)
+    exposure_gain = (
+        float(target_hit_attack - target_hit_baseline)
+        if target_hit_attack is not None and target_hit_baseline is not None
+        else None
+    )
+    exposure_recovery = (
+        float(target_hit_defense - target_hit_attack)
+        if target_hit_defense is not None and target_hit_attack is not None
+        else None
+    )
 
     return {
         "metric_type": "recommendation_manipulation",
@@ -274,6 +312,17 @@ def compute_recommendation_manipulation(
         "target_hit_rate_baseline": target_hit_baseline,
         "target_hit_rate_attack": target_hit_attack,
         "target_hit_rate_defense": target_hit_defense,
+        "target_hit_rate_at_k_baseline": target_hit_baseline,
+        "target_hit_rate_at_k_attack": target_hit_attack,
+        "target_hit_rate_at_k_defense": target_hit_defense,
+        "target_exposure_count_baseline": target_exposure_baseline,
+        "target_exposure_count_attack": target_exposure_attack,
+        "target_exposure_count_defense": target_exposure_defense,
+        "target_exposure_gain": exposure_gain,
+        "target_exposure_recovery": exposure_recovery,
+        "target_average_rank_baseline": average_target_rank(baseline, target_set, topk),
+        "target_average_rank_attack": average_target_rank(attack, target_set, topk),
+        "target_average_rank_defense": average_target_rank(defense, target_set, topk),
         "target_rank_shift_attack": rank_shift_attack,
         "target_rank_shift_defense": rank_shift_defense,
         "manipulation_risk_level": risk_level(
@@ -331,6 +380,17 @@ def run_synthetic_smoke() -> Dict[str, Any]:
         "target_hit_rate_baseline": target_hit_rate(baseline, target_set),
         "target_hit_rate_attack": target_hit_rate(attack, target_set),
         "target_hit_rate_defense": target_hit_rate(defense, target_set),
+        "target_hit_rate_at_k_baseline": target_hit_rate(baseline, target_set),
+        "target_hit_rate_at_k_attack": target_hit_rate(attack, target_set),
+        "target_hit_rate_at_k_defense": target_hit_rate(defense, target_set),
+        "target_exposure_count_baseline": target_exposure_count(baseline, target_set),
+        "target_exposure_count_attack": target_exposure_count(attack, target_set),
+        "target_exposure_count_defense": target_exposure_count(defense, target_set),
+        "target_exposure_gain": target_hit_rate(attack, target_set) - target_hit_rate(baseline, target_set),
+        "target_exposure_recovery": target_hit_rate(defense, target_set) - target_hit_rate(attack, target_set),
+        "target_average_rank_baseline": average_target_rank(baseline, target_set, 3),
+        "target_average_rank_attack": average_target_rank(attack, target_set, 3),
+        "target_average_rank_defense": average_target_rank(defense, target_set, 3),
         "target_rank_shift_attack": target_rank_shift(baseline, attack, target_set, 3),
         "target_rank_shift_defense": target_rank_shift(attack, defense, target_set, 3),
         "manipulation_risk_level": risk_level(

@@ -139,6 +139,26 @@
           "type": "object",
           "description": "Alias parameter group for targeted_poisoning.",
           "additionalProperties": true
+        },
+        "target_interaction_injection": {
+          "type": "object",
+          "description": "Planner-only target item positive interaction injection. It does not modify local training data without a future data-loader hook.",
+          "properties": {
+            "target_item_ids": {
+              "type": "array",
+              "items": { "type": ["integer", "string"] }
+            },
+            "target_item_strategy": {
+              "type": "string",
+              "enum": ["explicit", "high_frequency"],
+              "default": "high_frequency"
+            },
+            "injection_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "malicious_client_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "max_injections_per_client": { "type": "integer", "minimum": 1 },
+            "output_json": { "type": "string" }
+          },
+          "additionalProperties": true
         }
       },
       "additionalProperties": {
@@ -271,6 +291,20 @@
           },
           "additionalProperties": true
         },
+        "membership_pair_score_export": {
+          "type": "object",
+          "description": "Sidecar export for membership_pair_scores.csv. Uses supplied score files when available or clearly marked TopK rank proxy; it does not fabricate model scores.",
+          "properties": {
+            "membership_labels": { "type": "string" },
+            "recommendation_file": { "type": "string" },
+            "recommendation_dir": { "type": "string" },
+            "score_file": { "type": "string" },
+            "model_checkpoint": { "type": "string" },
+            "output_csv": { "type": "string" },
+            "output_json": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
         "gradient_leakage_probe": {
           "type": "object",
           "description": "Experimental gradient/image leakage demo probe parameters. It is not full image reconstruction.",
@@ -317,6 +351,15 @@
             "energy_reference": { "type": "number", "exclusiveMinimum": 0 },
             "zero_threshold": { "type": "number", "minimum": 0 },
             "max_flatten_elements": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": true
+        },
+        "interaction_reconstruction_probe": {
+          "type": "object",
+          "description": "Read-only candidate item reconstruction from item-like embedding updates. It is not full interaction history recovery or image DLG.",
+          "properties": {
+            "topk": { "type": "integer", "minimum": 1 },
+            "min_item_rows": { "type": "integer", "minimum": 2 }
           },
           "additionalProperties": true
         },

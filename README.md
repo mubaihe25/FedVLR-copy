@@ -151,3 +151,13 @@ Recent backend security work adds three real-data-oriented sidecar paths:
 - `scripts/build_security_sidecars.py` writes `membership_labels.json`, `target_items.json`, `item_metadata_stub.json`, and `security_sidecar_manifest.json` under `outputs/security_sidecars/<dataset>/`.
 
 Keep these boundaries explicit: item metadata stubs have no real semantic title/tag; membership inference with rank-only TopK is a proxy; recommendation manipulation without target items is list-change analysis only; update leakage risk is a summary probe, not DLG/InvertingGrad reconstruction.
+
+## Teacher-Guided Security Adapters
+
+This backend now includes three additional real-data-oriented adapters:
+
+- `privacy_eval/export_membership_pair_scores.py` exports `membership_pair_scores.csv` and `membership_score_summary.json` from `membership_labels.json` plus supplied score files or exported TopK rank evidence. Real model scores are only used when explicitly supplied; TopK-only evidence is marked as `score_source=rank_proxy`.
+- `attacks/target_interaction_injection.py` builds `malicious_interaction_plan.json` for target item promotion. It is planner-only and does not modify local training samples until a future data-loader hook consumes the plan.
+- `privacy_eval/interaction_reconstruction_probe.py` estimates candidate item ids from item-like embedding updates in `participant_params`. It is interaction candidate reconstruction only, not full user-history recovery and not DLG/image reconstruction.
+
+`privacy_eval/run_membership_probe_from_recommendations.py` should prefer `membership_pair_scores.csv` when available, then fall back to recommendation score/rank rows. Missing labels or missing score/rank evidence must produce `not_available` instead of fabricated attack results.

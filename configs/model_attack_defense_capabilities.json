@@ -309,6 +309,36 @@
       "notes": "Experimental update-space proxy only. It does not implement a full target-item backdoor or raw interaction poisoning pipeline."
     },
     {
+      "name": "target_interaction_injection",
+      "aliases": ["target_interaction_injection_planner", "target_promotion"],
+      "type": "experimental_planner_only_attack",
+      "family": "poisoning",
+      "category": "target_interaction_injection_planner",
+      "strategy": "target_item_positive_interaction_plan",
+      "display_category": "poisoning attack",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "mutates_participant_params": false,
+      "is_read_only": true,
+      "planner_only": true,
+      "config_schema": {
+        "target_item_ids": "list[string]",
+        "target_item_strategy": "string",
+        "injection_ratio": "float",
+        "malicious_client_ratio": "float",
+        "max_injections_per_client": "integer"
+      },
+      "default_values": {
+        "target_item_strategy": "high_frequency",
+        "injection_ratio": 0.1,
+        "malicious_client_ratio": 0.1,
+        "max_injections_per_client": 5
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Planner-only target item promotion sidecar. It does not modify FedVLR local training samples until a future data-loader hook consumes the plan."
+    },
+    {
       "name": "client_preference_leakage_probe",
       "type": "read_only_attack_like_probe",
       "family": "privacy_probe",
@@ -739,6 +769,29 @@
       "notes": "Read-only participant_params leakage risk summary. It does not save raw updates and is not image reconstruction."
     },
     {
+      "name": "interaction_reconstruction_probe",
+      "aliases": ["interaction_reconstruction"],
+      "type": "privacy_probe",
+      "family": "privacy_probe",
+      "category": "interaction_reconstruction",
+      "strategy": "item_embedding_update_candidate_reconstruction",
+      "status": "experimental",
+      "validation_status": "recommended_unvalidated",
+      "is_read_only": true,
+      "mutates_participant_params": false,
+      "config_schema": {
+        "topk": "integer",
+        "min_item_rows": "integer"
+      },
+      "default_values": {
+        "topk": 10,
+        "min_item_rows": 2
+      },
+      "recommended_models": ["FedRAP", "MMFedRAP"],
+      "validated_models": [],
+      "notes": "Read-only candidate item reconstruction from item-like embedding updates. It is not full interaction history recovery and not DLG image reconstruction."
+    },
+    {
       "name": "opacus_feasibility",
       "type": "future_work_check",
       "family": "privacy_probe",
@@ -894,6 +947,7 @@
     "poisoning_bulyan",
     "poisoning_norm_clip",
     "targeted_poisoning",
+    "target_interaction_injection",
     "secure_aggregation_sim",
     "model_replacement",
     "model_replacement_trimmed_mean",

@@ -1,0 +1,40 @@
+{
+  "model": "FedAvg",
+  "dataset": "KU",
+  "scenario": "attack_only",
+  "type": "SecurityMatrixSmoke",
+  "comment": "target_interaction_injection_smoke",
+  "enabled_attacks": ["target_interaction_injection"],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": true, "mode": "ratio", "ratio": 0.1, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.05,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {
+    "target_interaction_injection": {
+      "target_item_ids": ["1", "2", "3"],
+      "target_item_strategy": "explicit",
+      "injection_ratio": 0.1,
+      "malicious_client_ratio": 0.1,
+      "max_injections_per_client": 3,
+      "output_json": "malicious_interaction_plan.json"
+    }
+  },
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "planner_only": true,
+    "does_not_modify_training_data": true
+  }
+}

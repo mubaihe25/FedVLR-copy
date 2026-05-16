@@ -37,10 +37,18 @@ except ModuleNotFoundError as exc:
         raise
     UpdateLeakageRiskProbe = None  # type: ignore[assignment]
 
+try:
+    from privacy_eval.interaction_reconstruction_probe import InteractionReconstructionProbe
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    InteractionReconstructionProbe = None  # type: ignore[assignment]
+
 __all__ = [
     "BasePrivacyMetric",
     "ClientUpdateNormMetric",
     "GradientLeakageProbe",
+    "InteractionReconstructionProbe",
     "MembershipInferenceProbe",
     "PreferenceInferenceProbe",
     "UpdateLeakageRiskProbe",

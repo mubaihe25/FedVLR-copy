@@ -1,0 +1,37 @@
+{
+  "model": "FedAvg",
+  "dataset": "KU",
+  "scenario": "privacy_observation",
+  "type": "SecurityMatrixSmoke",
+  "comment": "membership_pair_score_export_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": ["membership_inference_probe"],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.05,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {
+    "membership_pair_score_export": {
+      "membership_labels": "outputs/security_sidecars/KU/membership_labels.json",
+      "recommendation_dir": "recommend_topk",
+      "output_csv": "membership_pair_scores.csv",
+      "output_json": "membership_score_summary.json"
+    },
+    "membership_inference_probe": {
+      "score_direction": "higher_is_member"
+    }
+  },
+  "extra_config": { "smoke_only": true, "sidecar_only": true }
+}
