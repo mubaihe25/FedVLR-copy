@@ -27,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attack-topk")
     parser.add_argument("--defense-topk")
     parser.add_argument("--target-items")
+    parser.add_argument("--target-interaction-plan")
+    parser.add_argument(
+        "--injected-users",
+        help="Comma-separated injected user ids, or a JSON/CSV/TXT file containing injected users.",
+    )
     parser.add_argument("--output-file", required=True)
     parser.add_argument("--topk", type=int, default=50)
     parser.add_argument("--smoke", action="store_true")
@@ -117,6 +122,62 @@ def read_topk(path: Path, topk: int = 50) -> Tuple[Dict[str, List[str]], List[st
     return normalized, warnings
 
 
+def topk_files_from_source(path: Path) -> List[Path]:
+    if path.is_file():
+        return [path]
+    if not path.exists():
+        return []
+    return sorted(
+        [
+            candidate
+            for candidate in path.rglob("*.csv")
+            if candidate.is_file()
+            and "recommend_topk_manifest" not in candidate.name.lower()
+        ],
+        key=lambda item: (item.stat().st_mtime, str(item)),
+    )
+
+
+def read_topk_source(path: Path, topk: int = 50) -> Tuple[Dict[str, List[str]], Dict[str, Any], List[str]]:
+    files = topk_files_from_source(path)
+    warnings: List[str] = []
+    if not files:
+        return {}, {
+            "source": str(path),
+            "source_type": "directory" if path.suffix == "" else "file",
+            "file_count": 0,
+            "user_count": 0,
+            "user_ids": [],
+        }, ["TopK source has no readable CSV files: {}".format(path)]
+
+    merged: Dict[str, List[str]] = {}
+    duplicate_users: Set[str] = set()
+    for file_path in files:
+        per_file, file_warnings = read_topk(file_path, topk=topk)
+        warnings.extend(file_warnings)
+        for user_id, items in per_file.items():
+            if user_id in merged:
+                duplicate_users.add(user_id)
+            merged[user_id] = items
+    if duplicate_users:
+        warnings.append(
+            "duplicate user ids found across TopK files; later files were used for users: {}".format(
+                ",".join(sorted(duplicate_users))
+            )
+        )
+    metadata = {
+        "source": str(path),
+        "source_type": "file" if path.is_file() else "directory",
+        "file_count": len(files),
+        "user_count": len(merged),
+        "user_ids": sorted(merged.keys()),
+        "files": [str(file_path) for file_path in files],
+    }
+    if not merged:
+        warnings.append("TopK source has no readable recommendation users: {}".format(path))
+    return merged, metadata, warnings
+
+
 def jaccard(a: Sequence[str], b: Sequence[str]) -> float:
     left = set(a)
     right = set(b)
@@ -158,6 +219,17 @@ def count_changed_items(
     return changed, injected, suppressed
 
 
+def changed_users(
+    baseline: Dict[str, List[str]],
+    attack: Dict[str, List[str]],
+    users: Optional[Set[str]] = None,
+) -> List[str]:
+    common_users = sorted(set(baseline) & set(attack))
+    if users is not None:
+        common_users = [user for user in common_users if user in users]
+    return [user for user in common_users if baseline[user] != attack[user]]
+
+
 def load_target_items(path: Optional[Path]) -> Tuple[List[str], List[str]]:
     if path is None:
         return [], ["target_items.json not provided"]
@@ -171,6 +243,62 @@ def load_target_items(path: Optional[Path]) -> Tuple[List[str], List[str]]:
     return [str(item) for item in value], []
 
 
+def load_injected_users(
+    injected_users_arg: Optional[str],
+    target_interaction_plan_path: Optional[Path],
+) -> Tuple[List[str], List[str]]:
+    users: List[str] = []
+    warnings: List[str] = []
+    if injected_users_arg:
+        candidate = Path(injected_users_arg)
+        if candidate.exists():
+            try:
+                if candidate.suffix.lower() == ".json":
+                    payload = json.loads(candidate.read_text(encoding="utf-8-sig"))
+                    if isinstance(payload, dict):
+                        value = payload.get("injected_users") or payload.get("user_ids") or payload.get("users")
+                        if value is None and isinstance(payload.get("injected_interactions"), list):
+                            value = [
+                                item.get("user_id")
+                                for item in payload.get("injected_interactions", [])
+                                if isinstance(item, dict)
+                            ]
+                    else:
+                        value = payload
+                    if isinstance(value, list):
+                        users.extend(str(item) for item in value if item not in (None, ""))
+                else:
+                    text = candidate.read_text(encoding="utf-8-sig")
+                    for token in text.replace("\n", ",").split(","):
+                        token = token.strip()
+                        if token:
+                            users.append(token)
+            except Exception as exc:  # noqa: BLE001
+                warnings.append("injected users file could not be parsed: {}".format(exc))
+        else:
+            users.extend(token.strip() for token in injected_users_arg.split(",") if token.strip())
+
+    if target_interaction_plan_path is not None:
+        try:
+            payload = json.loads(target_interaction_plan_path.read_text(encoding="utf-8-sig"))
+            interactions = payload.get("injected_interactions", []) if isinstance(payload, dict) else []
+            if isinstance(interactions, list):
+                users.extend(
+                    str(item.get("user_id"))
+                    for item in interactions
+                    if isinstance(item, dict) and item.get("user_id") not in (None, "")
+                )
+            if not interactions and isinstance(payload, dict):
+                for key in ("injected_users", "injected_clients", "malicious_client_ids"):
+                    value = payload.get(key)
+                    if isinstance(value, list):
+                        users.extend(str(item) for item in value if item not in (None, ""))
+        except Exception as exc:  # noqa: BLE001
+            warnings.append("target_interaction_plan could not be parsed: {}".format(exc))
+
+    return sorted(set(users)), warnings
+
+
 def target_hit_rate(recommendations: Optional[Dict[str, List[str]]], target_items: Set[str]) -> Optional[float]:
     if recommendations is None or not target_items:
         return None
@@ -178,6 +306,28 @@ def target_hit_rate(recommendations: Optional[Dict[str, List[str]]], target_item
         return None
     hits = sum(1 for items in recommendations.values() if target_items.intersection(items))
     return float(hits / len(recommendations))
+
+
+def target_hit_users(
+    recommendations: Optional[Dict[str, List[str]]],
+    target_items: Set[str],
+) -> List[str]:
+    if recommendations is None or not target_items:
+        return []
+    return sorted(
+        user_id
+        for user_id, items in recommendations.items()
+        if target_items.intersection(items)
+    )
+
+
+def subset_recommendations(
+    recommendations: Optional[Dict[str, List[str]]],
+    users: Set[str],
+) -> Optional[Dict[str, List[str]]]:
+    if recommendations is None:
+        return None
+    return {user: items for user, items in recommendations.items() if user in users}
 
 
 def target_exposure_count(
@@ -255,14 +405,17 @@ def compute_recommendation_manipulation(
     defense_topk: Optional[Path] = None,
     target_items_path: Optional[Path] = None,
     topk: int = 50,
+    target_interaction_plan_path: Optional[Path] = None,
+    injected_users_arg: Optional[str] = None,
 ) -> Dict[str, Any]:
     warnings: List[str] = []
-    baseline, baseline_warnings = read_topk(baseline_topk, topk=topk)
-    attack, attack_warnings = read_topk(attack_topk, topk=topk)
+    baseline, baseline_source, baseline_warnings = read_topk_source(baseline_topk, topk=topk)
+    attack, attack_source, attack_warnings = read_topk_source(attack_topk, topk=topk)
     defense = None
+    defense_source = None
     defense_warnings: List[str] = []
     if defense_topk is not None:
-        defense, defense_warnings = read_topk(defense_topk, topk=topk)
+        defense, defense_source, defense_warnings = read_topk_source(defense_topk, topk=topk)
     warnings.extend("baseline: {}".format(warning) for warning in baseline_warnings)
     warnings.extend("attack: {}".format(warning) for warning in attack_warnings)
     warnings.extend("defense: {}".format(warning) for warning in defense_warnings)
@@ -270,6 +423,12 @@ def compute_recommendation_manipulation(
     target_items, target_warnings = load_target_items(target_items_path)
     warnings.extend(target_warnings)
     target_set = set(target_items)
+    injected_users, injected_warnings = load_injected_users(
+        injected_users_arg,
+        target_interaction_plan_path,
+    )
+    warnings.extend(injected_warnings)
+    injected_user_set = set(injected_users)
 
     baseline_attack_overlap, baseline_attack_jaccard = compare_lists(baseline, attack)
     attack_defense_overlap, attack_defense_jaccard = compare_lists(attack, defense)
@@ -294,10 +453,33 @@ def compute_recommendation_manipulation(
         if target_hit_defense is not None and target_hit_attack is not None
         else None
     )
+    common_user_set = set(baseline) & set(attack)
+    evaluated_user_count = len(common_user_set) if common_user_set else len(attack)
+    attack_target_hit_users = target_hit_users(attack, target_set)
+    baseline_target_hit_users = target_hit_users(baseline, target_set)
+    changed_user_ids = changed_users(baseline, attack)
+
+    injected_baseline = subset_recommendations(baseline, injected_user_set)
+    injected_attack = subset_recommendations(attack, injected_user_set)
+    injected_common_user_set = set(injected_baseline or {}) & set(injected_attack or {})
+    injected_users_with_attack_topk = sorted(injected_user_set & set(attack))
+    injected_target_hit_users_attack = target_hit_users(injected_attack, target_set)
+    injected_target_hit_users_baseline = target_hit_users(injected_baseline, target_set)
+    injected_target_hit_rate_baseline = target_hit_rate(injected_baseline, target_set)
+    injected_target_hit_rate_attack = target_hit_rate(injected_attack, target_set)
+    if injected_users and not injected_users_with_attack_topk:
+        warnings.append("no injected users were found in attack TopK source")
+    if target_items and not attack_target_hit_users:
+        warnings.append(
+            "target items do not appear in attack TopK; ranks beyond TopK require target_rank_summary or score export"
+        )
 
     return {
         "metric_type": "recommendation_manipulation",
         "topk": int(topk),
+        "baseline_topk_source": baseline_source,
+        "attack_topk_source": attack_source,
+        "defense_topk_source": defense_source,
         "baseline_attack_overlap": baseline_attack_overlap,
         "baseline_attack_jaccard": baseline_attack_jaccard,
         "attack_defense_overlap": attack_defense_overlap,
@@ -309,6 +491,16 @@ def compute_recommendation_manipulation(
         "suppressed_item_count": int(suppressed_count),
         "target_items_available": bool(target_items),
         "target_items": target_items,
+        "baseline_user_count": len(baseline),
+        "attack_user_count": len(attack),
+        "defense_user_count": len(defense) if defense is not None else None,
+        "common_user_count": len(common_user_set),
+        "evaluated_user_count": int(evaluated_user_count),
+        "changed_user_count": len(changed_user_ids),
+        "changed_users": changed_user_ids,
+        "target_hit_user_count": len(attack_target_hit_users),
+        "target_hit_users": attack_target_hit_users,
+        "target_hit_users_baseline": baseline_target_hit_users,
         "target_hit_rate_baseline": target_hit_baseline,
         "target_hit_rate_attack": target_hit_attack,
         "target_hit_rate_defense": target_hit_defense,
@@ -325,6 +517,21 @@ def compute_recommendation_manipulation(
         "target_average_rank_defense": average_target_rank(defense, target_set, topk),
         "target_rank_shift_attack": rank_shift_attack,
         "target_rank_shift_defense": rank_shift_defense,
+        "injected_user_count": len(injected_users),
+        "injected_users": injected_users,
+        "injected_users_with_topk_count": len(injected_users_with_attack_topk),
+        "injected_users_with_attack_topk_count": len(injected_users_with_attack_topk),
+        "injected_users_with_baseline_topk_count": len(injected_user_set & set(baseline)),
+        "injected_users_with_topk": injected_users_with_attack_topk,
+        "injected_common_user_count": len(injected_common_user_set),
+        "injected_target_hit_rate_baseline": injected_target_hit_rate_baseline,
+        "injected_target_hit_rate_attack": injected_target_hit_rate_attack,
+        "injected_target_hit_user_count_baseline": len(injected_target_hit_users_baseline),
+        "injected_target_hit_user_count_attack": len(injected_target_hit_users_attack),
+        "injected_target_hit_users_baseline": injected_target_hit_users_baseline,
+        "injected_target_hit_users_attack": injected_target_hit_users_attack,
+        "injected_user_changed_count": len(changed_users(baseline, attack, injected_user_set)),
+        "injected_changed_users": changed_users(baseline, attack, injected_user_set),
         "manipulation_risk_level": risk_level(
             baseline_attack_jaccard,
             target_hit_baseline,
@@ -418,6 +625,8 @@ def main() -> int:
             defense_topk=Path(args.defense_topk) if args.defense_topk else None,
             target_items_path=Path(args.target_items) if args.target_items else None,
             topk=args.topk,
+            target_interaction_plan_path=Path(args.target_interaction_plan) if args.target_interaction_plan else None,
+            injected_users_arg=args.injected_users,
         )
     write_json(Path(args.output_file), summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

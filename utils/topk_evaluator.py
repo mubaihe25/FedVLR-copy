@@ -4,12 +4,13 @@
 ################################
 """
 import os
+import json
 import numpy as np
 import pandas as pd
 import torch
+from datetime import datetime
 from utils.metrics import metrics_dict
 from torch.nn.utils.rnn import pad_sequence
-from utils.utils import get_local_time
 
 
 # These metrics are typical in topk recommendations
@@ -34,7 +35,86 @@ class TopKEvaluator(object):
         self.metrics = config["metrics"]
         self.topk = config["topk"]
         self.save_recom_result = config["save_recommended_topk"]
+        self._recommend_export_counter = 0
         self._check_args()
+
+    @staticmethod
+    def _safe_filename_part(value):
+        text = str(value)
+        return "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in text)
+
+    @staticmethod
+    def _user_ids_for_export(eval_data):
+        try:
+            user_ids = eval_data.get_eval_users()
+        except Exception:
+            return []
+        if hasattr(user_ids, "detach"):
+            user_ids = user_ids.detach().cpu().numpy()
+        if hasattr(user_ids, "tolist"):
+            user_ids = user_ids.tolist()
+        if not isinstance(user_ids, list):
+            user_ids = [user_ids]
+        return [str(int(value)) if isinstance(value, (int, np.integer)) else str(value) for value in user_ids]
+
+    def _topk_export_path(self, dir_name, model_name, dataset_name, idx, max_k, user_ids):
+        self._recommend_export_counter += 1
+        if len(user_ids) == 1:
+            user_part = "user{}".format(self._safe_filename_part(user_ids[0]))
+        elif user_ids:
+            user_part = "users{}_first{}_last{}".format(
+                len(user_ids),
+                self._safe_filename_part(user_ids[0]),
+                self._safe_filename_part(user_ids[-1]),
+            )
+        else:
+            user_part = "users0"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = "{}-{}-idx{}-{}-top{}-{}-{:06d}.csv".format(
+            self._safe_filename_part(model_name),
+            self._safe_filename_part(dataset_name),
+            self._safe_filename_part(idx),
+            user_part,
+            max_k,
+            timestamp,
+            self._recommend_export_counter,
+        )
+        return os.path.join(dir_name, filename)
+
+    @staticmethod
+    def _update_recommend_topk_manifest(dir_name, file_path, user_ids, max_k, idx):
+        manifest_path = os.path.join(dir_name, "recommend_topk_manifest.json")
+        try:
+            if os.path.exists(manifest_path):
+                with open(manifest_path, "r", encoding="utf-8-sig") as handle:
+                    manifest = json.load(handle)
+            else:
+                manifest = {
+                    "manifest_type": "recommend_topk_manifest",
+                    "topk_files": [],
+                    "user_ids": [],
+                    "file_count": 0,
+                    "warning": None,
+                }
+            basename = os.path.basename(file_path)
+            entry = {
+                "file": basename,
+                "user_ids": list(user_ids),
+                "topk": int(max_k),
+                "idx": str(idx),
+            }
+            manifest.setdefault("topk_files", []).append(entry)
+            existing_users = [str(value) for value in manifest.get("user_ids", [])]
+            for user_id in user_ids:
+                if str(user_id) not in existing_users:
+                    existing_users.append(str(user_id))
+            manifest["user_ids"] = existing_users
+            manifest["file_count"] = len(manifest.get("topk_files", []))
+            manifest["generated_at"] = datetime.now().isoformat(timespec="seconds")
+            with open(manifest_path, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, ensure_ascii=False, indent=2)
+        except Exception:
+            return
 
     def collect(self, interaction, scores_tensor, full=False):
         """collect the topk intermediate result of one batch, this function mainly
@@ -95,17 +175,16 @@ class TopKEvaluator(object):
             dir_name = os.path.abspath(self.config["recommend_topk"])
             if not os.path.exists(dir_name):
                 os.makedirs(dir_name)
-            file_path = os.path.join(
-                dir_name,
-                "{}-{}-idx{}-top{}-{}.csv".format(
-                    model_name, dataset_name, idx, max_k, get_local_time()
-                ),
+            user_ids = self._user_ids_for_export(eval_data)
+            file_path = self._topk_export_path(
+                dir_name, model_name, dataset_name, idx, max_k, user_ids
             )
             x_df = pd.DataFrame(topk_index)
             x_df.insert(0, "id", eval_data.get_eval_users())
             x_df.columns = ["id"] + ["top_" + str(i) for i in range(max_k)]
             x_df = x_df.astype(int)
             x_df.to_csv(file_path, sep="\t", index=False)
+            self._update_recommend_topk_manifest(dir_name, file_path, user_ids, max_k, idx)
         assert len(pos_len_list) == len(topk_index)
         # if recom right?
         bool_rec_matrix = []

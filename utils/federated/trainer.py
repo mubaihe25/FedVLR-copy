@@ -1,4 +1,8 @@
 import os
+import json
+import math
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -23,6 +27,8 @@ class FederatedTrainer(Trainer):
         self.last_participants = None
         self.weights = None
         self.user_metrics = {}
+        self.target_rank_records = []
+        self.target_rank_warnings = []
 
         if config["is_multimodal_model"]:
             dataset_path = os.path.abspath(config["data_path"] + config["dataset"])
@@ -40,6 +46,154 @@ class FederatedTrainer(Trainer):
                 self.v_feat.requires_grad_(False)
             if self.t_feat is not None:
                 self.t_feat.requires_grad_(False)
+
+    @staticmethod
+    def _as_list(value):
+        if value in (None, ""):
+            return []
+        if isinstance(value, (list, tuple, set)):
+            return list(value)
+        return [value]
+
+    def _target_item_ids_for_eval(self, item_count):
+        target_ids = []
+        for raw_item in self._as_list(self.config.get("target_item_ids", [])):
+            try:
+                item_id = int(raw_item)
+            except (TypeError, ValueError):
+                warning = "target item is not an integer internal item id: {}".format(raw_item)
+                if warning not in self.target_rank_warnings:
+                    self.target_rank_warnings.append(warning)
+                continue
+            if 0 <= item_id < item_count:
+                target_ids.append(item_id)
+            else:
+                warning = "target item out of score range: {}".format(raw_item)
+                if warning not in self.target_rank_warnings:
+                    self.target_rank_warnings.append(warning)
+        return sorted(set(target_ids))
+
+    @staticmethod
+    def _batch_user_ids(batch, fallback_user):
+        if isinstance(batch, (list, tuple)) and batch:
+            users = batch[0]
+            if hasattr(users, "detach"):
+                users = users.detach().cpu().tolist()
+            elif hasattr(users, "tolist"):
+                users = users.tolist()
+            if not isinstance(users, list):
+                users = [users]
+            return [str(int(user_id)) if isinstance(user_id, (int, np.integer)) else str(user_id) for user_id in users]
+        return [str(fallback_user)]
+
+    @staticmethod
+    def _rank_for_item(score_row, item_id):
+        item_score = score_row[item_id]
+        rank = int(torch.sum(score_row > item_score).detach().cpu().item()) + 1
+        return rank, float(item_score.detach().cpu().item())
+
+    @staticmethod
+    def _json_safe_float(value):
+        if value is None:
+            return None
+        value = float(value)
+        if not math.isfinite(value):
+            return None
+        return value
+
+    @classmethod
+    def _average_json_safe(cls, records, field):
+        values = [
+            float(record[field])
+            for record in records
+            if record.get(field) is not None and math.isfinite(float(record[field]))
+        ]
+        if not values:
+            return None
+        return float(sum(values) / len(values))
+
+    def _record_target_rank_scores(self, user_ids, unmasked_scores, masked_scores):
+        if unmasked_scores.ndim == 1:
+            unmasked_scores = unmasked_scores.unsqueeze(0)
+        if masked_scores.ndim == 1:
+            masked_scores = masked_scores.unsqueeze(0)
+        target_ids = self._target_item_ids_for_eval(unmasked_scores.shape[-1])
+        if not target_ids:
+            return
+        for row_index, user_id in enumerate(user_ids):
+            if row_index >= unmasked_scores.shape[0]:
+                break
+            for item_id in target_ids:
+                unmasked_rank, unmasked_score = self._rank_for_item(
+                    unmasked_scores[row_index], item_id
+                )
+                masked_rank, masked_score = self._rank_for_item(
+                    masked_scores[row_index], item_id
+                )
+                self.target_rank_records.append(
+                    {
+                        "user_id": str(user_id),
+                        "item_id": str(item_id),
+                        "unmasked_rank": unmasked_rank,
+                        "unmasked_score": self._json_safe_float(unmasked_score),
+                        "masked_rank": masked_rank,
+                        "masked_score": self._json_safe_float(masked_score),
+                    }
+                )
+
+    def _write_target_rank_summary(self):
+        if not self.target_rank_records:
+            return
+        by_target = {}
+        for record in self.target_rank_records:
+            target_records = by_target.setdefault(record["item_id"], [])
+            target_records.append(record)
+
+        target_summaries = {}
+        for item_id, records in by_target.items():
+            target_summaries[item_id] = {
+                "user_count": len({record["user_id"] for record in records}),
+                "best_unmasked_rank": min(record["unmasked_rank"] for record in records),
+                "best_masked_rank": min(record["masked_rank"] for record in records),
+                "average_unmasked_rank": float(
+                    sum(record["unmasked_rank"] for record in records) / len(records)
+                ),
+                "average_masked_rank": float(
+                    sum(record["masked_rank"] for record in records) / len(records)
+                ),
+                "average_unmasked_score": self._average_json_safe(
+                    records, "unmasked_score"
+                ),
+                "average_masked_score": self._average_json_safe(
+                    records, "masked_score"
+                ),
+            }
+
+        summary = {
+            "metric_type": "target_rank_score",
+            "summary_type": "target_rank_summary",
+            "score_type": "unmasked_and_masked",
+            "target_item_ids": sorted(by_target.keys(), key=lambda value: int(value)),
+            "evaluated_user_count": len({record["user_id"] for record in self.target_rank_records}),
+            "record_count": len(self.target_rank_records),
+            "target_summaries": target_summaries,
+            "user_target_records": self.target_rank_records,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "warnings": list(self.target_rank_warnings),
+            "note": (
+                "Ranks are computed during test evaluation from full item scores. "
+                "Unmasked ranks are captured before train-positive masking; masked ranks "
+                "use the same masked score matrix as Recall/NDCG evaluation."
+            ),
+        }
+        result_file_name = self.config.get("result_file_name")
+        if not result_file_name:
+            return
+        output_path = Path(result_file_name).parent / "target_rank_summary.json"
+        output_path.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def _load_feature_file(self, file_path):
         """
@@ -313,8 +467,15 @@ class FederatedTrainer(Trainer):
                     batch = batch[1].to(self.device)
 
                 scores = client_model.full_sort_predict(batch, t_feat, v_feat)
+                unmasked_scores = scores.detach().clone()
                 mask = batch[1]
                 scores[mask] = -float("inf")
+                if is_test:
+                    self._record_target_rank_scores(
+                        self._batch_user_ids(batch, user),
+                        unmasked_scores,
+                        scores.detach().clone(),
+                    )
                 _, indices = torch.topk(scores, k=max(self.config["topk"]))
                 batch_scores.append(indices)
 
@@ -332,5 +493,8 @@ class FederatedTrainer(Trainer):
 
         for key in metrics.keys():
             metrics[key] = metrics[key] / len(eval_data.loaders)
+
+        if is_test:
+            self._write_target_rank_summary()
 
         return metrics

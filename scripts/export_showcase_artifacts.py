@@ -36,6 +36,9 @@ PRIVACY_SIDECAR_PATTERNS = (
     "opacus_feasibility*.json",
     "update_leakage_risk*.json",
     "recommendation_manipulation*.json",
+    "target_rank_summary*.json",
+    "target_score_summary*.json",
+    "recommend_topk_manifest*.json",
     "membership_labels*.json",
     "security_sidecar_manifest*.json",
     "target_items*.json",
@@ -579,6 +582,10 @@ def extract_attack_defense_summary(
                 [attack_bundle, result_bundle, baseline_bundle],
                 ["recommendation_manipulation"],
             ),
+            "target_rank_score": first_sidecar(
+                [attack_bundle, result_bundle, baseline_bundle],
+                ["target_rank_score", "target_rank_summary", "target_score_summary"],
+            ),
             "note": "Defense dir was not provided; baseline-vs-attack drops are reported and recovery is unavailable.",
             "warnings": warnings,
         }
@@ -610,6 +617,10 @@ def extract_attack_defense_summary(
             "recommendation_manipulation": first_sidecar(
                 [source_bundle],
                 ["recommendation_manipulation"],
+            ),
+            "target_rank_score": first_sidecar(
+                [source_bundle],
+                ["target_rank_score", "target_rank_summary", "target_score_summary"],
             ),
             "note": "baseline/attack/defense dirs were not all provided; comparison artifact is structural only.",
             "warnings": ["baseline-dir, attack-dir, and defense-dir are required for comparison metrics"],
@@ -684,27 +695,45 @@ def extract_attack_defense_summary(
             [attack_bundle, defense_bundle, baseline_bundle],
             ["recommendation_manipulation"],
         ),
+        "target_rank_score": first_sidecar(
+            [attack_bundle, defense_bundle, baseline_bundle],
+            ["target_rank_score", "target_rank_summary", "target_score_summary"],
+        ),
         "note": "Recovery is computed as (defense - attack) / (baseline - attack) when all Recall@50/NDCG@50 values are available.",
         "warnings": warnings,
     }
 
 
-def find_topk_file(result_dir: Optional[Path]) -> Optional[Path]:
+def find_topk_files(result_dir: Optional[Path]) -> List[Path]:
     if result_dir is None or not result_dir.exists():
-        return None
+        return []
     direct_dir = result_dir / "recommend_topk"
     if direct_dir.exists():
-        direct_candidates = list(direct_dir.rglob("*.csv"))
-        topk_file = newest_file(direct_candidates)
-        if topk_file is not None:
-            return topk_file
+        run_dirs = [
+            path
+            for path in direct_dir.iterdir()
+            if path.is_dir() and any(child.is_file() for child in path.glob("*.csv"))
+        ]
+        if run_dirs:
+            latest_run_dir = sorted(run_dirs, key=lambda item: (item.stat().st_mtime, str(item)))[-1]
+            return sorted(
+                [path for path in latest_run_dir.glob("*.csv") if path.is_file()],
+                key=lambda item: (item.stat().st_mtime, str(item)),
+            )
+        direct_candidates = [path for path in direct_dir.glob("*.csv") if path.is_file()]
+        if direct_candidates:
+            return sorted(direct_candidates, key=lambda item: (item.stat().st_mtime, str(item)))
     candidates: List[Path] = []
     for path in result_dir.rglob("*.csv"):
         lower_path = str(path).lower()
         if "recommend_topk" in lower_path or "top" in path.name.lower():
             candidates.append(path)
-    unique_candidates = list(dict.fromkeys(candidates))
-    return newest_file(unique_candidates)
+    return sorted(dict.fromkeys(candidates), key=lambda item: (item.stat().st_mtime, str(item)))
+
+
+def find_topk_file(result_dir: Optional[Path]) -> Optional[Path]:
+    files = find_topk_files(result_dir)
+    return files[-1] if files else None
 
 
 def dataset_name_for_bundle(bundle: Optional[ExperimentBundle]) -> Optional[str]:
@@ -885,24 +914,32 @@ def enrich_recommendations_with_metadata(
 def read_recommendations(bundle: Optional[ExperimentBundle]) -> Tuple[List[Dict[str, Any]], List[str]]:
     if bundle is None:
         return [], ["result directory not provided"]
-    topk_path = find_topk_file(bundle.result_dir)
-    if topk_path is None:
+    topk_files = find_topk_files(bundle.result_dir)
+    if not topk_files:
         return [], ["TopK recommendation file not found under {}".format(bundle.source_dir_string())]
 
-    rows = read_csv_rows(topk_path, delimiter="\t")
-    if rows and len(rows[0].keys()) <= 1:
-        rows = read_csv_rows(topk_path, delimiter=",")
-    if not rows:
-        return [], ["TopK recommendation file could not be parsed: {}".format(topk_path)]
+    recommendations: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    for topk_path in topk_files:
+        rows = read_csv_rows(topk_path, delimiter="\t")
+        if rows and len(rows[0].keys()) <= 1:
+            rows = read_csv_rows(topk_path, delimiter=",")
+        if not rows:
+            warnings.append("TopK recommendation file could not be parsed: {}".format(topk_path))
+            continue
 
-    recommendations = parse_long_recommendations(rows)
+        file_recommendations = parse_long_recommendations(rows)
+        if not file_recommendations:
+            for row in rows:
+                file_recommendations.extend(parse_wide_topk_recommendations(row))
+        for item in file_recommendations:
+            item["source_file"] = str(topk_path)
+        recommendations.extend(file_recommendations)
     if not recommendations:
-        recommendations = parse_wide_topk_recommendations(rows[0])
-    if not recommendations:
-        return [], ["TopK recommendation file has no readable recommendation rows: {}".format(topk_path)]
+        return [], warnings or ["TopK recommendation files have no readable recommendation rows"]
     metadata, _, metadata_warnings = read_item_metadata(dataset_name_for_bundle(bundle))
     enrich_recommendations_with_metadata(recommendations, metadata)
-    return recommendations, metadata_warnings
+    return recommendations, warnings + metadata_warnings
 
 
 def apply_recommendation_statuses(
@@ -963,6 +1000,14 @@ def extract_recommendation_comparison(
         sidecar_sources,
         ["recommendation_manipulation"],
     ) or {"status": "not_available", "summary_type": "recommendation_manipulation"}
+    target_rank_score_summary = find_nested_payload(
+        sidecar_sources,
+        ["target_rank_score", "target_rank_summary", "target_score_summary"],
+    ) or {
+        "status": "not_available",
+        "summary_type": "target_rank_score",
+        "warning": "target rank/score summary not found",
+    }
     target_items = []
     for source in sidecar_sources:
         for value in collect_nested_values(source, ["target_items"]):
@@ -1003,6 +1048,7 @@ def extract_recommendation_comparison(
         "attacked_recommendations": attack,
         "defended_recommendations": defense,
         "recommendation_manipulation": manipulation_summary,
+        "target_rank_score": target_rank_score_summary,
         "target_items": target_items,
         "note": "TopK files are read as long-form rows when item_id/rank/score exist, or as legacy wide top_N rows with null scores.",
         "warnings": warnings,
