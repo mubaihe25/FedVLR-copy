@@ -1,0 +1,33 @@
+{
+  "model": "FedAvg",
+  "dataset": "AMAZON_BEAUTY_POC",
+  "scenario": "baseline",
+  "type": "AmazonBeautyPOCBaselineObservationSmoke",
+  "comment": "amazon_beauty_poc_baseline_observation_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.1,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "observation_chain_smoke": true,
+    "target_rank_score_diagnostics": true,
+    "target_item_ids": ["0", "1", "2", "6", "7"],
+    "image_features_note": "URL-hash placeholder, not visual embeddings"
+  }
+}
