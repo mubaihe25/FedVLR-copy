@@ -66,8 +66,22 @@ class TargetInteractionInjectionPlanner(BaseAttack):
         self.max_injections_per_client = int(
             self.config.get("max_injections_per_client", 5) or 5
         )
+        self.target_user_strategy = str(self.config.get("target_user_strategy", "random"))
+        self.repeat_target_interactions = bool(self.config.get("repeat_target_interactions", False))
+        self.rating_value = float(self.config.get("rating_value", 1.0) or 1.0)
+        self.only_non_train_positive_targets = bool(
+            self.config.get("only_non_train_positive_targets", True)
+        )
+        self.target_promotion_loss_enabled = bool(
+            self.config.get("target_promotion_loss_enabled", False)
+            or self.config.get("target_promotion_loss", False)
+        )
+        self.target_promotion_loss_lambda = float(
+            self.config.get("target_promotion_loss_lambda", 0.0) or 0.0
+        )
         self.injected_clients: List[str] = []
         self.injected_interactions: List[Dict[str, Any]] = []
+        self.per_user_injected_items: Dict[str, List[str]] = defaultdict(list)
         self.warnings: List[str] = []
         self.last_summary: Dict[str, Any] = self._summary_from_config()
 
@@ -89,11 +103,22 @@ class TargetInteractionInjectionPlanner(BaseAttack):
             "target_item_ids": list(self.target_item_ids),
             "target_item_count": len(self.target_item_ids),
             "target_item_strategy": self.config.get("target_item_strategy", "explicit_or_high_frequency"),
+            "target_user_strategy": self.target_user_strategy,
             "injection_ratio": self.injection_ratio,
+            "repeat_target_interactions": self.repeat_target_interactions,
+            "rating_value": self.rating_value,
+            "only_non_train_positive_targets": self.only_non_train_positive_targets,
+            "target_promotion_loss": {
+                "enabled": self.target_promotion_loss_enabled,
+                "lambda": self.target_promotion_loss_lambda,
+                "status": "feasibility_only",
+                "reason": "FedVLR local train path does not expose a stable target-score loss hook for all models.",
+            },
             "malicious_client_count": None,
             "planned_interaction_count": 0,
             "injected_client_count": 0,
             "injected_interaction_count": 0,
+            "per_user_injected_items": {},
             "requires_training_data_hook": not self.enabled,
             "does_not_modify_training_data": not self.enabled,
             "mutates_local_training_data": self.enabled,
@@ -166,19 +191,27 @@ class TargetInteractionInjectionPlanner(BaseAttack):
 
         df = dataset.df
         existing_items = set(df[iid_field].astype(int).tolist()) if iid_field in df else set()
-        candidate_targets = [item for item in valid_targets if item not in existing_items]
+        if self.only_non_train_positive_targets:
+            candidate_targets = [item for item in valid_targets if item not in existing_items]
+        else:
+            candidate_targets = list(valid_targets)
         if not candidate_targets:
             self.warnings.append("all target items already present for client {}".format(client_id_str))
             return client_loader
 
         base_count = max(1, len(df))
         injection_count = max(1, int(round(base_count * self.injection_ratio)))
-        injection_count = min(injection_count, self.max_injections_per_client, len(candidate_targets))
+        injection_count = min(injection_count, self.max_injections_per_client)
+        if not self.repeat_target_interactions:
+            injection_count = min(injection_count, len(candidate_targets))
         rows = []
-        for item_id in candidate_targets[:injection_count]:
+        for index in range(injection_count):
+            item_id = candidate_targets[index % len(candidate_targets)]
             new_row = {column: None for column in df.columns}
             new_row[uid_field] = int(client_id) if str(client_id).isdigit() else client_id
             new_row[iid_field] = int(item_id)
+            if "rating" in new_row:
+                new_row["rating"] = self.rating_value
             rows.append(new_row)
 
         if not rows:
@@ -203,11 +236,12 @@ class TargetInteractionInjectionPlanner(BaseAttack):
 
         self.injected_clients.append(client_id_str)
         for row in rows:
+            self.per_user_injected_items[str(row[uid_field])].append(str(row[iid_field]))
             self.injected_interactions.append(
                 {
                     "user_id": str(row[uid_field]),
                     "item_id": str(row[iid_field]),
-                    "rating": 1.0,
+                    "rating": self.rating_value,
                     "source": "in_memory_target_injection_hook",
                 }
             )
@@ -221,6 +255,10 @@ class TargetInteractionInjectionPlanner(BaseAttack):
                 "injected_interaction_count": len(self.injected_interactions),
                 "planned_interaction_count": len(self.injected_interactions),
                 "injected_interactions": list(self.injected_interactions),
+                "per_user_injected_items": {
+                    user_id: list(items)
+                    for user_id, items in sorted(self.per_user_injected_items.items())
+                },
                 "status": "hook_active",
                 "proxy_only": False,
                 "requires_training_data_hook": False,
@@ -243,6 +281,10 @@ class TargetInteractionInjectionPlanner(BaseAttack):
                 "injected_client_count": len(set(self.injected_clients)),
                 "injected_interaction_count": len(self.injected_interactions),
                 "injected_interactions": list(self.injected_interactions),
+                "per_user_injected_items": {
+                    user_id: list(items)
+                    for user_id, items in sorted(self.per_user_injected_items.items())
+                },
             }
         )
         round_state.setdefault("attack_outputs", {})[self.name] = dict(self.last_summary)
@@ -276,6 +318,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--malicious-client-ids", nargs="*", default=[])
     parser.add_argument("--malicious-client-ratio", type=float, default=0.1)
     parser.add_argument("--max-injections-per-client", type=int, default=5)
+    parser.add_argument(
+        "--target-user-strategy",
+        default="random",
+        choices=["random", "active_users", "evaluated_users", "rank_near_top_users"],
+    )
+    parser.add_argument("--repeat-target-interactions", action="store_true")
+    parser.add_argument("--rating-value", type=float, default=1.0)
+    parser.add_argument("--only-non-train-positive-targets", action="store_true", default=True)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--smoke", action="store_true")
@@ -362,13 +412,22 @@ def choose_malicious_clients(
     explicit: Sequence[Any],
     ratio: float,
     rng: random.Random,
+    target_user_strategy: str = "random",
+    pairs_by_user: Optional[Dict[str, Set[str]]] = None,
 ) -> List[str]:
     if explicit:
         return sorted({str(user) for user in explicit})
     ordered = sorted(users, key=lambda value: (len(str(value)), str(value)))
+    if target_user_strategy == "active_users" and pairs_by_user:
+        ordered = sorted(
+            ordered,
+            key=lambda user_id: (-len(pairs_by_user.get(str(user_id), set())), len(str(user_id)), str(user_id)),
+        )
     if not ordered:
         return []
     count = max(1, int(round(len(ordered) * max(0.0, min(1.0, ratio)))))
+    if target_user_strategy == "active_users":
+        return sorted(ordered[: min(count, len(ordered))], key=lambda value: (len(str(value)), str(value)))
     return sorted(rng.sample(ordered, min(count, len(ordered))), key=lambda value: (len(str(value)), str(value)))
 
 
@@ -390,6 +449,10 @@ def build_interaction_injection_plan(
     malicious_client_ids: Optional[Sequence[Any]] = None,
     malicious_client_ratio: float = 0.1,
     max_injections_per_client: int = 5,
+    target_user_strategy: str = "random",
+    repeat_target_interactions: bool = False,
+    rating_value: float = 1.0,
+    only_non_train_positive_targets: bool = True,
     seed: int = 42,
 ) -> Dict[str, Any]:
     rng = random.Random(seed)
@@ -412,22 +475,29 @@ def build_interaction_injection_plan(
         malicious_client_ids or [],
         malicious_client_ratio,
         rng,
+        target_user_strategy=target_user_strategy,
+        pairs_by_user=pairs_by_user,
     )
     planned_interactions: List[Dict[str, Any]] = []
     per_client_target_count = max(1, int(round(len(target_items) * max(0.0, injection_ratio)))) if target_items else 0
     per_client_target_count = min(per_client_target_count, max(0, max_injections_per_client))
     for client_id in malicious_clients:
         existing_items = pairs_by_user.get(str(client_id), set())
-        candidate_targets = [item for item in target_items if item not in existing_items]
+        candidate_targets = [
+            item for item in target_items if (not only_non_train_positive_targets or item not in existing_items)
+        ]
         if not candidate_targets:
             continue
-        selected = candidate_targets[:per_client_target_count]
-        for item_id in selected:
+        selected_count = per_client_target_count
+        if not repeat_target_interactions:
+            selected_count = min(selected_count, len(candidate_targets))
+        for index in range(selected_count):
+            item_id = candidate_targets[index % len(candidate_targets)]
             planned_interactions.append(
                 {
                     "user_id": str(client_id),
                     "item_id": str(item_id),
-                    "rating": 1.0,
+                    "rating": rating_value,
                     "source": "planned_target_injection",
                 }
             )
@@ -443,11 +513,19 @@ def build_interaction_injection_plan(
         "target_item_ids": target_items,
         "target_item_count": len(target_items),
         "target_item_strategy": target_item_strategy,
+        "target_user_strategy": target_user_strategy,
         "injection_ratio": injection_ratio,
+        "repeat_target_interactions": repeat_target_interactions,
+        "rating_value": rating_value,
+        "only_non_train_positive_targets": only_non_train_positive_targets,
         "malicious_client_ids": malicious_clients,
         "malicious_client_count": len(malicious_clients),
         "planned_interaction_count": len(planned_interactions),
         "planned_interactions": planned_interactions,
+        "per_user_injected_items": {
+            client_id: [item["item_id"] for item in planned_interactions if item["user_id"] == client_id]
+            for client_id in malicious_clients
+        },
         "requires_training_data_hook": True,
         "does_not_modify_training_data": True,
         "note": (
@@ -564,9 +642,13 @@ def main() -> int:
             injection_ratio=args.injection_ratio,
             malicious_client_ids=args.malicious_client_ids,
             malicious_client_ratio=args.malicious_client_ratio,
-            max_injections_per_client=args.max_injections_per_client,
-            seed=args.seed,
-        )
+        max_injections_per_client=args.max_injections_per_client,
+        target_user_strategy=args.target_user_strategy,
+        repeat_target_interactions=args.repeat_target_interactions,
+        rating_value=args.rating_value,
+        only_non_train_positive_targets=args.only_non_train_positive_targets,
+        seed=args.seed,
+    )
     write_json(output_json, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

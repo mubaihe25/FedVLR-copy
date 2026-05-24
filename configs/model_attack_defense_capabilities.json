@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "updated_at": "2026-04-16",
+  "updated_at": "2026-05-24",
   "max_enabled_attacks": 2,
   "recommended_max_enabled_defenses": 3,
   "defense_selection_policy": "multiple_allowed_with_unverified_warnings",
@@ -326,20 +326,30 @@
         "enabled": "boolean",
         "target_item_ids": "list[string]",
         "target_item_strategy": "string",
+        "target_user_strategy": "string",
         "injection_ratio": "float",
         "malicious_client_ratio": "float",
-        "max_injections_per_client": "integer"
+        "max_injections_per_client": "integer",
+        "repeat_target_interactions": "boolean",
+        "rating_value": "float",
+        "only_non_train_positive_targets": "boolean",
+        "target_promotion_loss": "boolean",
+        "target_promotion_loss_lambda": "float"
       },
       "default_values": {
         "enabled": false,
         "target_item_strategy": "high_frequency",
+        "target_user_strategy": "random",
         "injection_ratio": 0.1,
         "malicious_client_ratio": 0.1,
-        "max_injections_per_client": 5
+        "max_injections_per_client": 5,
+        "repeat_target_interactions": false,
+        "only_non_train_positive_targets": true,
+        "target_promotion_loss": false
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
-      "notes": "Default-off target item promotion. Without enabled=true it is planner-only; with enabled=true it injects in-memory positive target interactions for malicious clients only and never rewrites dataset files."
+      "notes": "Default-off target item promotion. Without enabled=true it is planner-only; with enabled=true it injects in-memory positive target interactions for malicious clients only and never rewrites dataset files. target_promotion_loss is currently feasibility-only unless a model-specific local target-score hook is added."
     },
     {
       "name": "client_preference_leakage_probe",
@@ -556,7 +566,8 @@
         "clip_norm": "float",
         "noise_multiplier": "float",
         "noise_std": "float",
-        "seed": "integer"
+        "seed": "integer",
+        "recommended_formal_dp_path": "string"
       },
       "default_values": {
         "clip_norm": 5.0,
@@ -564,7 +575,7 @@
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
-      "notes": "Experimental central DP-style noise defense only. It has no formal privacy accountant and must not be described as complete differential privacy."
+      "notes": "Experimental central DP-style noise defense only. It has no formal privacy accountant and must not be described as complete differential privacy. Use privacy_eval/run_opacus_toy_demo.py as the formal-DP route demonstration, not as FedVLR end-to-end DP."
     },
     {
       "name": "secure_aggregation_sim",
@@ -582,7 +593,8 @@
       "config_schema": {
         "secure_agg_seed": "integer",
         "secure_agg_mask_std": "float",
-        "secure_agg_max_elements": "integer"
+        "secure_agg_max_elements": "integer",
+        "dropout_simulation": "boolean"
       },
       "default_values": {
         "secure_agg_seed": 42,
@@ -591,7 +603,7 @@
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
-      "notes": "Simulation-only pairwise mask cancellation summary. This is not a production cryptographic secure aggregation protocol."
+      "notes": "Simulation-only pairwise mask cancellation summary. privacy_eval/run_secure_aggregation_demo.py can run a synthetic mask-cancellation demo, but this is not a production cryptographic secure aggregation protocol."
     },
     {
       "name": "robust_defense",
@@ -654,14 +666,15 @@
         "member_scores": "list[float]",
         "non_member_scores": "list[float]",
         "membership_threshold": "float",
-        "score_direction": "string"
+        "score_direction": "string",
+        "score_source": "checkpoint_score|unmasked_rank|rank_proxy"
       },
       "default_values": {
         "score_direction": "higher_is_member"
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
-      "notes": "Experimental score-based membership inference probe. It compares member and non-member score distributions and is not a full black-box industrial MIA."
+      "notes": "Experimental membership inference probe. Prefer checkpoint_score when available, then unmasked_rank, and use TopK rank_proxy only as a clearly marked proxy. It compares member and non-member score distributions and is not a full black-box industrial MIA."
     },
     {
       "name": "gradient_leakage_probe",
@@ -784,7 +797,10 @@
       "mutates_participant_params": false,
       "config_schema": {
         "topk": "integer",
-        "min_item_rows": "integer"
+        "min_item_rows": "integer",
+        "hit_k_values": "list[integer]",
+        "image_feature_file": "string",
+        "text_feature_file": "string"
       },
       "default_values": {
         "topk": 10,
@@ -792,7 +808,7 @@
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],
-      "notes": "Read-only candidate item reconstruction from item-like embedding updates. It is not full interaction history recovery and not DLG image reconstruction."
+      "notes": "Read-only per-client candidate item reconstruction from item-like embedding updates, with hit@10/20/50 when train interactions are available. It is not full interaction history recovery and not DLG image reconstruction."
     },
     {
       "name": "opacus_feasibility",

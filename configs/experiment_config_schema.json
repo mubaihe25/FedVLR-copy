@@ -158,9 +158,19 @@
               "enum": ["explicit", "high_frequency"],
               "default": "high_frequency"
             },
+            "target_user_strategy": {
+              "type": "string",
+              "enum": ["random", "active_users", "evaluated_users", "rank_near_top_users"],
+              "default": "random"
+            },
             "injection_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
             "malicious_client_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
             "max_injections_per_client": { "type": "integer", "minimum": 1 },
+            "repeat_target_interactions": { "type": "boolean", "default": false },
+            "rating_value": { "type": "number" },
+            "only_non_train_positive_targets": { "type": "boolean", "default": true },
+            "target_promotion_loss": { "type": "boolean", "default": false },
+            "target_promotion_loss_lambda": { "type": "number", "minimum": 0 },
             "output_json": { "type": "string" }
           },
           "additionalProperties": true
@@ -306,6 +316,20 @@
             "score_file": { "type": "string" },
             "checkpoint_path": { "type": "string" },
             "model_checkpoint": { "type": "string" },
+            "target_rank_summary": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              ]
+            },
+            "score_mode": {
+              "type": "string",
+              "enum": ["checkpoint_score", "unmasked_rank", "rank_proxy", "auto"],
+              "default": "auto"
+            },
             "model": { "type": "string" },
             "dataset": { "type": "string" },
             "output_dir": { "type": "string" },
@@ -374,7 +398,15 @@
               "description": "Backward-compatible standalone runner alias. Launcher configs should prefer interaction_reconstruction_topk to avoid colliding with evaluator topk."
             },
             "min_item_rows": { "type": "integer", "minimum": 2 },
-            "interaction_file": { "type": "string" }
+            "interaction_file": { "type": "string" },
+            "hit_k_values": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1 },
+              "default": [10, 20, 50]
+            },
+            "image_feature_file": { "type": "string" },
+            "text_feature_file": { "type": "string" },
+            "nearest_neighbor_expansion": { "type": "boolean", "default": false }
           },
           "additionalProperties": true
         },
@@ -393,6 +425,35 @@
         "opacus_feasibility": {
           "type": "object",
           "description": "Future-work feasibility check only. It does not install Opacus or modify FedVLR training.",
+          "additionalProperties": true
+        },
+        "opacus_toy_demo": {
+          "type": "object",
+          "description": "Standalone formal-DP route toy demo. It does not integrate Opacus into the FedVLR training loop.",
+          "properties": {
+            "sample_count": { "type": "integer", "minimum": 8 },
+            "epochs": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "noise_multiplier": { "type": "number", "minimum": 0 },
+            "max_grad_norm": { "type": "number", "exclusiveMinimum": 0 },
+            "delta": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "seed": { "type": "integer" },
+            "output_json": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "secure_aggregation_demo": {
+          "type": "object",
+          "description": "Standalone synthetic pairwise-mask cancellation demo. It is not a production cryptographic protocol.",
+          "properties": {
+            "client_count": { "type": "integer", "minimum": 2 },
+            "dimension": { "type": "integer", "minimum": 1 },
+            "seed": { "type": "integer" },
+            "dropout_client_ids": {
+              "type": "array",
+              "items": { "type": ["string", "integer"] }
+            },
+            "output_json": { "type": "string" }
+          },
           "additionalProperties": true
         }
       },

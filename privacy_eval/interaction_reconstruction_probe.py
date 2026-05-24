@@ -29,6 +29,12 @@ from privacy_eval.registry import register_privacy_metric
 
 
 ITEM_TOKENS = ("item", "item_embedding", "item_commonality", "item_personality", "embedding_item")
+MODALITY_TOKENS = {
+    "item_embedding": ("item_embedding", "embedding_item", "item_commonality", "item_personality"),
+    "image": ("image", "vision", "visual", "v_feat"),
+    "text": ("text", "txt", "t_feat"),
+    "modality": ("modality", "fusion", "multi_modal"),
+}
 
 
 class InteractionReconstructionProbe(BasePrivacyMetric):
@@ -122,23 +128,76 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
                 norms.append(total ** 0.5)
         return norms
 
-    def _candidate_scores(self, participant_params: Any) -> Tuple[Dict[str, float], int, int]:
+    @staticmethod
+    def _modality_for_path(path: str) -> str:
+        normalized = path.lower()
+        for modality, tokens in MODALITY_TOKENS.items():
+            if any(token in normalized for token in tokens):
+                return modality
+        return "item_like_update"
+
+    @staticmethod
+    def _top_candidates(scores: Dict[str, float], topk: int) -> List[Dict[str, Any]]:
+        return [
+            {"item_id": item_id, "score": score, "rank": index + 1}
+            for index, (item_id, score) in enumerate(
+                sorted(scores.items(), key=lambda item: item[1], reverse=True)[:topk]
+            )
+        ]
+
+    @staticmethod
+    def _hit_at(candidate_ids: Sequence[str], train_item_ids: Optional[Set[str]], k: int) -> Optional[float]:
+        if not train_item_ids:
+            return None
+        scoped = list(candidate_ids)[:k]
+        if not scoped:
+            return None
+        return float(sum(1 for item_id in scoped if item_id in train_item_ids) / len(scoped))
+
+    def _candidate_scores(
+        self, participant_params: Any
+    ) -> Tuple[Dict[str, float], int, int, Dict[str, List[Dict[str, Any]]], Dict[str, Dict[str, Any]]]:
         if not isinstance(participant_params, dict):
-            return {}, 0, 0
+            return {}, 0, 0, {}, {}
         scores: Dict[str, float] = {}
+        per_client_scores: Dict[str, Dict[str, float]] = {}
+        modality_scores: Dict[str, Dict[str, float]] = {}
+        modality_tensor_counts: Dict[str, int] = {}
         embedding_tensor_count = 0
         client_count = 0
         for client_id, update in participant_params.items():
+            client_id_str = str(client_id)
             tensors = self._walk_item_tensors(update, path="client_{}".format(client_id))
             if not tensors:
                 continue
             client_count += 1
+            client_scores = per_client_scores.setdefault(client_id_str, {})
             for path, tensor in tensors:
                 embedding_tensor_count += 1
+                modality = self._modality_for_path(path)
+                modality_tensor_counts[modality] = modality_tensor_counts.get(modality, 0) + 1
+                scoped_modality_scores = modality_scores.setdefault(modality, {})
                 for item_index, value in enumerate(self._row_norms(tensor)):
                     item_id = str(item_index)
                     scores[item_id] = max(scores.get(item_id, 0.0), float(value))
-        return scores, embedding_tensor_count, client_count
+                    client_scores[item_id] = max(client_scores.get(item_id, 0.0), float(value))
+                    scoped_modality_scores[item_id] = max(
+                        scoped_modality_scores.get(item_id, 0.0),
+                        float(value),
+                    )
+        per_client_candidates = {
+            client_id: self._top_candidates(client_scores, self.topk)
+            for client_id, client_scores in sorted(per_client_scores.items())
+        }
+        modality_breakdown = {
+            modality: {
+                "embedding_tensor_count": modality_tensor_counts.get(modality, 0),
+                "candidate_item_count": len(modality_scores.get(modality, {})),
+                "top_candidates": self._top_candidates(modality_scores.get(modality, {}), self.topk),
+            }
+            for modality in sorted(modality_scores)
+        }
+        return scores, embedding_tensor_count, client_count, per_client_candidates, modality_breakdown
 
     def _default_train_file(self) -> Optional[Path]:
         if self.train_interaction_file:
@@ -196,17 +255,33 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         train_item_ids: Optional[Set[str]] = None,
         source: str = "real_participant_params",
     ) -> Dict[str, Any]:
-        scores, embedding_tensor_count, client_count = self._candidate_scores(participant_params)
+        (
+            scores,
+            embedding_tensor_count,
+            client_count,
+            per_client_candidates,
+            modality_breakdown,
+        ) = self._candidate_scores(participant_params)
         if not scores:
             return {
                 "probe_type": "interaction_reconstruction",
+                "metric_type": "interaction_reconstruction",
+                "summary_type": "interaction_reconstruction_summary",
                 "status": "not_available",
                 "source": "not_available",
                 "client_count": 0,
                 "embedding_tensor_count": 0,
+                "candidate_item_count": 0,
                 "candidate_item_ids": [],
                 "candidate_scores": [],
+                "per_client_candidates": {},
                 "hit_at_k": None,
+                "hit_at_10": None,
+                "hit_at_20": None,
+                "hit_at_50": None,
+                "modality_breakdown": {},
+                "highest_risk_modality": None,
+                "reconstruction_risk_level": "not_available",
                 "topk": self.topk,
                 "risk_level": "not_available",
                 "warnings": ["no identifiable item embedding update tensors found"],
@@ -215,25 +290,42 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
 
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)[: self.topk]
         candidate_ids = [item_id for item_id, _ in ranked]
-        hit_at_k = None
-        if train_item_ids:
-            hit_count = sum(1 for item_id in candidate_ids if item_id in train_item_ids)
-            hit_at_k = float(hit_count / len(candidate_ids)) if candidate_ids else None
+        hit_at_k = self._hit_at(candidate_ids, train_item_ids, self.topk)
+        hit_at_10 = self._hit_at(candidate_ids, train_item_ids, 10)
+        hit_at_20 = self._hit_at(candidate_ids, train_item_ids, 20)
+        hit_at_50 = self._hit_at(candidate_ids, train_item_ids, 50)
+        highest_risk_modality = None
+        if modality_breakdown:
+            highest_risk_modality = max(
+                modality_breakdown.items(),
+                key=lambda item: item[1].get("candidate_item_count", 0),
+            )[0]
+        risk = self._risk_level(len(candidate_ids), hit_at_50 if hit_at_50 is not None else hit_at_k)
 
         return {
             "probe_type": "interaction_reconstruction",
+            "metric_type": "interaction_reconstruction",
+            "summary_type": "interaction_reconstruction_summary",
             "status": "available",
             "source": source,
             "client_count": client_count,
             "embedding_tensor_count": embedding_tensor_count,
+            "candidate_item_count": len(candidate_ids),
             "candidate_item_ids": candidate_ids,
             "candidate_scores": [
                 {"item_id": item_id, "score": score, "rank": index + 1}
                 for index, (item_id, score) in enumerate(ranked)
             ],
+            "per_client_candidates": per_client_candidates,
             "hit_at_k": hit_at_k,
+            "hit_at_10": hit_at_10,
+            "hit_at_20": hit_at_20,
+            "hit_at_50": hit_at_50,
+            "modality_breakdown": modality_breakdown,
+            "highest_risk_modality": highest_risk_modality,
+            "reconstruction_risk_level": risk,
             "topk": self.topk,
-            "risk_level": self._risk_level(len(candidate_ids), hit_at_k),
+            "risk_level": risk,
             "warnings": [],
             "note": "interaction candidate reconstruction only; not full user history recovery or image DLG",
         }

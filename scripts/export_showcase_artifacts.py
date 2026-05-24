@@ -34,10 +34,13 @@ PRIVACY_SIDECAR_PATTERNS = (
     "gradient_inversion*.json",
     "interaction_reconstruction*.json",
     "opacus_feasibility*.json",
+    "opacus_toy*.json",
     "update_leakage_risk*.json",
     "recommendation_manipulation*.json",
     "target_rank_summary*.json",
+    "target_rank_comparison*.json",
     "target_score_summary*.json",
+    "target_items_promotion*.json",
     "recommend_topk_manifest*.json",
     "membership_labels*.json",
     "security_sidecar_manifest*.json",
@@ -50,6 +53,8 @@ PRIVACY_SIDECAR_PATTERNS = (
     "target_interaction_plan*.json",
     "malicious_interaction_plan*.json",
     "secure_aggregation*.json",
+    "secure_aggregation_demo*.json",
+    "defense_matrix_summary*.json",
     "multi_krum*.json",
     "bulyan*.json",
     "dp_noise*.json",
@@ -584,7 +589,15 @@ def extract_attack_defense_summary(
             ),
             "target_rank_score": first_sidecar(
                 [attack_bundle, result_bundle, baseline_bundle],
-                ["target_rank_score", "target_rank_summary", "target_score_summary"],
+                ["target_rank_score", "target_rank_summary", "target_rank_comparison", "target_score_summary"],
+            ),
+            "target_items_promotion": first_sidecar(
+                [attack_bundle, result_bundle, baseline_bundle],
+                ["target_items_promotion"],
+            ),
+            "defense_matrix_summary": first_sidecar(
+                [result_bundle, attack_bundle, baseline_bundle],
+                ["defense_matrix_summary"],
             ),
             "note": "Defense dir was not provided; baseline-vs-attack drops are reported and recovery is unavailable.",
             "warnings": warnings,
@@ -620,7 +633,15 @@ def extract_attack_defense_summary(
             ),
             "target_rank_score": first_sidecar(
                 [source_bundle],
-                ["target_rank_score", "target_rank_summary", "target_score_summary"],
+                ["target_rank_score", "target_rank_summary", "target_rank_comparison", "target_score_summary"],
+            ),
+            "target_items_promotion": first_sidecar(
+                [source_bundle],
+                ["target_items_promotion"],
+            ),
+            "defense_matrix_summary": first_sidecar(
+                [source_bundle],
+                ["defense_matrix_summary"],
             ),
             "note": "baseline/attack/defense dirs were not all provided; comparison artifact is structural only.",
             "warnings": ["baseline-dir, attack-dir, and defense-dir are required for comparison metrics"],
@@ -697,7 +718,15 @@ def extract_attack_defense_summary(
         ),
         "target_rank_score": first_sidecar(
             [attack_bundle, defense_bundle, baseline_bundle],
-            ["target_rank_score", "target_rank_summary", "target_score_summary"],
+            ["target_rank_score", "target_rank_summary", "target_rank_comparison", "target_score_summary"],
+        ),
+        "target_items_promotion": first_sidecar(
+            [attack_bundle, defense_bundle, baseline_bundle],
+            ["target_items_promotion"],
+        ),
+        "defense_matrix_summary": first_sidecar(
+            [defense_bundle, attack_bundle, baseline_bundle],
+            ["defense_matrix_summary"],
         ),
         "note": "Recovery is computed as (defense - attack) / (baseline - attack) when all Recall@50/NDCG@50 values are available.",
         "warnings": warnings,
@@ -1002,7 +1031,7 @@ def extract_recommendation_comparison(
     ) or {"status": "not_available", "summary_type": "recommendation_manipulation"}
     target_rank_score_summary = find_nested_payload(
         sidecar_sources,
-        ["target_rank_score", "target_rank_summary", "target_score_summary"],
+        ["target_rank_score", "target_rank_summary", "target_rank_comparison", "target_score_summary"],
     ) or {
         "status": "not_available",
         "summary_type": "target_rank_score",
@@ -1158,9 +1187,19 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
             defense_sources,
             ["secure_aggregation_sim", "secure_agg_sim", "secureaggregationsim"],
         ),
+        "secure_aggregation_demo": find_nested_payload(
+            defense_sources,
+            ["secure_aggregation_demo", "secure_aggregation_demo_summary"],
+        ),
+        "defense_matrix": find_nested_payload(
+            defense_sources,
+            ["defense_matrix", "defense_matrix_summary"],
+        ),
     }
     if not any(named_defense_summaries.values()):
-        warnings.append("named defense summaries for median/krum/multi_krum/bulyan/dp_noise/secure_aggregation_sim not found")
+        warnings.append(
+            "named defense summaries for median/krum/multi_krum/bulyan/dp_noise/secure_aggregation_sim/demo/matrix not found"
+        )
 
     return {
         "defense_type": defense_type,
@@ -1183,6 +1222,10 @@ def extract_defense_trace(bundle: Optional[ExperimentBundle]) -> Dict[str, Any]:
         or {"status": "not_available", "summary_type": "dp_noise"},
         "secure_aggregation_sim": named_defense_summaries["secure_aggregation_sim"]
         or {"status": "not_available", "summary_type": "secure_aggregation_sim"},
+        "secure_aggregation_demo": named_defense_summaries["secure_aggregation_demo"]
+        or {"status": "not_available", "summary_type": "secure_aggregation_demo"},
+        "defense_matrix": named_defense_summaries["defense_matrix"]
+        or {"status": "not_available", "summary_type": "defense_matrix_summary"},
         "note": "Defense trace is assembled from metadata.defense_summaries and round defense metrics when available.",
         "warnings": warnings,
     }
@@ -1257,6 +1300,26 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         sources,
         ["opacus_feasibility", "opacus_feasibility_check"],
     )
+    opacus_toy = find_nested_payload(
+        sources,
+        ["opacus_toy", "opacus_toy_demo", "opacus_toy_summary"],
+    )
+    secure_aggregation_demo = find_nested_payload(
+        sources,
+        ["secure_aggregation_demo", "secure_aggregation_demo_summary"],
+    )
+    target_items_promotion = find_nested_payload(
+        sources,
+        ["target_items_promotion", "target_items_promotion_summary"],
+    )
+    target_rank_comparison = find_nested_payload(
+        sources,
+        ["target_rank_comparison", "target_rank_score"],
+    )
+    defense_matrix_summary = find_nested_payload(
+        sources,
+        ["defense_matrix", "defense_matrix_summary"],
+    )
     update_leakage = find_nested_payload(
         sources,
         ["update_leakage_risk", "update_leakage_risk_probe"],
@@ -1291,6 +1354,16 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         "interaction_reconstruction": interaction_reconstruction
         or not_available_probe("interaction_reconstruction"),
         "opacus_feasibility": opacus_feasibility or not_available_probe("opacus_feasibility"),
+        "opacus_toy": opacus_toy
+        or {"status": "not_available", "summary_type": "opacus_toy_summary"},
+        "secure_aggregation_demo": secure_aggregation_demo
+        or {"status": "not_available", "summary_type": "secure_aggregation_demo_summary"},
+        "target_items_promotion": target_items_promotion
+        or {"status": "not_available", "summary_type": "target_items_promotion"},
+        "target_rank_comparison": target_rank_comparison
+        or {"status": "not_available", "summary_type": "target_rank_comparison"},
+        "defense_matrix_summary": defense_matrix_summary
+        or {"status": "not_available", "summary_type": "defense_matrix_summary"},
         "security_sidecar_manifest": sidecar_manifest
         or {"status": "not_available", "summary_type": "security_sidecar_manifest"},
         "membership_labels": membership_labels
@@ -1326,6 +1399,16 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         warnings.append("interaction_reconstruction result not found in this experiment")
     if opacus_feasibility is None:
         warnings.append("opacus_feasibility result not found in this experiment")
+    if opacus_toy is None:
+        warnings.append("opacus_toy summary not found in this experiment")
+    if secure_aggregation_demo is None:
+        warnings.append("secure_aggregation_demo summary not found in this experiment")
+    if target_items_promotion is None:
+        warnings.append("target_items_promotion result not found in this experiment")
+    if target_rank_comparison is None:
+        warnings.append("target_rank_comparison result not found in this experiment")
+    if defense_matrix_summary is None:
+        warnings.append("defense_matrix_summary result not found in this experiment")
     if sidecar_manifest is None:
         warnings.append("security_sidecar_manifest not found in this experiment")
 

@@ -240,7 +240,22 @@ def load_target_items(path: Optional[Path]) -> Tuple[List[str], List[str]]:
     value = payload.get("target_items") if isinstance(payload, dict) else payload
     if not isinstance(value, list):
         return [], ["target_items field is missing or not a list"]
-    return [str(item) for item in value], []
+    items: List[str] = []
+    warnings: List[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            item_id = (
+                item.get("item_id")
+                if item.get("item_id") is not None
+                else item.get("itemID", item.get("id", item.get("raw_item_id")))
+            )
+            if item_id in (None, ""):
+                warnings.append("target item object missing item_id: {}".format(item))
+                continue
+            items.append(str(item_id))
+        elif item not in (None, ""):
+            items.append(str(item))
+    return sorted(set(items), key=lambda value: (len(value), value)), warnings
 
 
 def load_injected_users(

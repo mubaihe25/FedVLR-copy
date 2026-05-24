@@ -299,6 +299,7 @@ class DPNoiseDefense(BaseDefense):
             "norms_after": norms_after or {},
             "privacy_mode": "central_dp_style_update_noise",
             "formal_accountant": False,
+            "recommended_formal_dp_path": "opacus_toy_or_future_fedavg_adapter",
             "utility_privacy_tradeoff_note": (
                 "larger noise may reduce utility; this module reports no epsilon/delta"
             ),
@@ -325,6 +326,7 @@ class DPNoiseDefense(BaseDefense):
                 "total_noised_tensor_count": 0,
                 "privacy_mode": "central_dp_style_update_noise",
                 "formal_accountant": False,
+                "recommended_formal_dp_path": "opacus_toy_or_future_fedavg_adapter",
                 "utility_privacy_tradeoff_note": (
                     "larger noise may reduce utility; this module reports no epsilon/delta"
                 ),
@@ -350,6 +352,7 @@ class DPNoiseDefense(BaseDefense):
             "total_noised_tensor_count": noised_total,
             "privacy_mode": "central_dp_style_update_noise",
             "formal_accountant": False,
+            "recommended_formal_dp_path": "opacus_toy_or_future_fedavg_adapter",
             "utility_privacy_tradeoff_note": (
                 "larger noise may reduce utility; this module reports no epsilon/delta"
             ),

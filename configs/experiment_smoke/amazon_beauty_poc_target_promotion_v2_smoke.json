@@ -1,0 +1,52 @@
+{
+  "model": "FedAvg",
+  "dataset": "AMAZON_BEAUTY_POC",
+  "scenario": "attack_only",
+  "type": "AmazonBeautyPOCTargetPromotionV2Smoke",
+  "comment": "amazon_beauty_poc_target_promotion_v2_smoke",
+  "enabled_attacks": ["target_interaction_injection"],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": true, "mode": "ratio", "ratio": 0.3, "client_ids": [] },
+  "training_params": {
+    "epochs": 5,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.2,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {
+    "target_interaction_injection": {
+      "enabled": true,
+      "target_item_ids": ["0"],
+      "target_item_strategy": "explicit",
+      "target_user_strategy": "active_users",
+      "injection_ratio": 1.0,
+      "malicious_client_ratio": 0.3,
+      "max_injections_per_client": 5,
+      "repeat_target_interactions": true,
+      "rating_value": 5.0,
+      "only_non_train_positive_targets": true,
+      "target_promotion_loss": false,
+      "target_promotion_loss_lambda": 0.0,
+      "output_json": "target_interaction_plan.json"
+    }
+  },
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "target_rank_score_diagnostics": true,
+    "target_item_ids": ["0"],
+    "planner_only": false,
+    "in_memory_hook_enabled": true,
+    "does_not_modify_dataset_files": true,
+    "target_success_metrics": ["target_entered_top50", "target_rank_gain", "target_exposure_gain"],
+    "image_features_note": "URL-hash placeholder, not visual embeddings"
+  }
+}

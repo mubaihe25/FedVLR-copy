@@ -165,3 +165,29 @@ This backend now includes three additional real-data-oriented adapters:
 - `privacy_eval/interaction_reconstruction_probe.py` estimates candidate item ids from item-like embedding updates in `participant_params` and can compute `hit_at_k` against dataset train interactions when available. It is interaction candidate reconstruction only, not full user-history recovery and not DLG/image reconstruction.
 
 `privacy_eval/run_membership_probe_from_recommendations.py` should prefer `membership_pair_scores.csv` when available, then fall back to recommendation score/rank rows. Missing labels or missing score/rank evidence must produce `not_available` instead of fabricated attack results.
+
+## V2 Security Observation Notes
+
+The V2 backend work keeps all new security paths configurable and default-off for baseline training:
+
+- Membership inference has three evidence tiers. `checkpoint_score` is preferred when a supported FedAvg/FedRAP-style checkpoint can be scored. `unmasked_rank` uses `target_rank_summary.json` full-candidate ranks when available. `rank_proxy` uses exported TopK positions only and must remain labeled as proxy evidence.
+- `membership_pair_scores.csv` uses the fields `user_id,item_id,label,score,rank,score_source,available`. Unsupported checkpoints and missing ranks must leave rows unavailable rather than invent scores.
+- `interaction_reconstruction_summary.json` is per-client candidate reconstruction from item-like updates. It can report `hit_at_10`, `hit_at_20`, `hit_at_50`, `per_client_candidates`, `modality_breakdown`, and `highest_risk_modality`, but it is not full interaction history recovery.
+- Target promotion success must be reported with explicit criteria: `target_entered_top50`, positive `target_rank_gain` / rank shift toward 1, and `target_exposure_gain` in TopK. Rank or score gain alone is diagnostic, not proof of successful manipulation.
+- `target_interaction_injection` may use `target_user_strategy`, `repeat_target_interactions`, `rating_value`, and `only_non_train_positive_targets`; it still mutates only in-memory malicious-client loaders and never rewrites dataset files.
+- `target_promotion_loss` is feasibility-only unless a stable model-specific target-score loss hook is added. Do not describe it as an implemented attack loss path.
+- `dp_noise` remains central DP-style clipping plus Gaussian update noise, with `formal_accountant=false`; it is not formal differential privacy.
+- `privacy_eval/run_opacus_toy_demo.py` is a standalone formal-DP route demo. If Opacus is unavailable it writes `opacus_available=false`; even when available it is not full FedVLR DP.
+- `privacy_eval/run_secure_aggregation_demo.py` is a synthetic pairwise-mask cancellation demo. It is not a production cryptographic secure aggregation protocol.
+- `scripts/export_showcase_artifacts.py` can surface `membership_score_summary.json`, `target_items_promotion.json`, `target_rank_comparison.json`, `opacus_toy_summary.json`, `secure_aggregation_demo_summary.json`, and `defense_matrix_summary.json`. Missing files should produce warnings and unavailable/null fields, not fabricated success.
+- `datasets/AMAZON_BEAUTY_POC/image_features.npy` is still a URL-hash placeholder and must not be called real visual embeddings.
+
+Useful V2 smoke commands:
+
+```powershell
+.\.venv\Scripts\python.exe privacy_eval\export_membership_pair_scores.py --membership-labels outputs\security_sidecars\AMAZON_BEAUTY_POC\membership_labels.json --target-rank-summary outputs\results\FedAvg\AMAZON_BEAUTY_POC\AmazonBeautyPOCBaselineObservationSmoke\target_rank_summary.json --score-mode auto --output-dir outputs\security_smokes\amazon_beauty_poc_score_mia_smoke
+.\.venv\Scripts\python.exe privacy_eval\select_target_items_for_promotion.py --baseline-rank-summary outputs\results\FedAvg\AMAZON_BEAUTY_POC\AmazonBeautyPOCBaselineObservationSmoke\target_rank_summary.json --item-metadata datasets\AMAZON_BEAUTY_POC\item_metadata.json --inter-file datasets\AMAZON_BEAUTY_POC\inter.csv --output-json outputs\security_sidecars\AMAZON_BEAUTY_POC\target_items_promotion.json
+.\.venv\Scripts\python.exe privacy_eval\run_opacus_toy_demo.py --output-json outputs\security_smokes\opacus_toy_summary.json
+.\.venv\Scripts\python.exe privacy_eval\run_secure_aggregation_demo.py --output-json outputs\security_smokes\secure_aggregation_demo_summary.json
+.\.venv\Scripts\python.exe -m compileall -q attacks defenses privacy_eval scripts utils common
+```

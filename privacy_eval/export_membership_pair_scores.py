@@ -38,7 +38,15 @@ from privacy_eval.run_membership_probe_from_recommendations import (
 )
 
 
-PAIR_SCORE_FIELDS = ["user_id", "item_id", "label", "score", "rank", "score_source"]
+PAIR_SCORE_FIELDS = [
+    "user_id",
+    "item_id",
+    "label",
+    "score",
+    "rank",
+    "score_source",
+    "available",
+]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,6 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-checkpoint", help="Alias for --checkpoint-path.")
     parser.add_argument("--model", help="Optional model name for checkpoint feasibility reporting.")
     parser.add_argument("--dataset", help="Optional dataset name for checkpoint feasibility reporting.")
+    parser.add_argument("--target-rank-summary", action="append", default=[])
+    parser.add_argument(
+        "--score-mode",
+        default="auto",
+        choices=["checkpoint_score", "unmasked_rank", "rank_proxy", "auto"],
+        help="Preferred score source. auto uses checkpoint/score files, then unmasked rank, then TopK rank proxy.",
+    )
     parser.add_argument("--output-dir", help="Directory for membership_pair_scores.csv and membership_score_summary.json.")
     parser.add_argument("--output-csv")
     parser.add_argument("--output-json")
@@ -101,20 +116,28 @@ def collect_existing_files(paths: Sequence[str], directory: Optional[str]) -> Li
     return [path for path in dict.fromkeys(files) if path.exists() and path.is_file()]
 
 
-def auto_discover_result_files(result_dir: Optional[str]) -> Tuple[Optional[Path], List[Path], List[Path]]:
+def auto_discover_result_files(
+    result_dir: Optional[str],
+) -> Tuple[Optional[Path], List[Path], List[Path], List[Path]]:
     if not result_dir:
-        return None, [], []
+        return None, [], [], []
     root = Path(result_dir)
     if not root.exists():
-        return None, [], []
+        return None, [], [], []
     labels = sorted(root.rglob("membership_labels.json"))
     score_files = sorted(root.rglob("membership_pair_scores.csv"))
+    target_rank_files = sorted(root.rglob("target_rank_summary*.json"))
     recommendation_files = []
     for topk_dir in root.rglob("recommend_topk"):
         if topk_dir.is_dir():
             recommendation_files.extend(sorted(topk_dir.rglob("*.csv")))
             recommendation_files.extend(sorted(topk_dir.rglob("*.tsv")))
-    return (labels[0] if labels else None), score_files, recommendation_files
+    return (
+        labels[0] if labels else None,
+        score_files,
+        recommendation_files,
+        target_rank_files,
+    )
 
 
 def score_from_flat_row(row: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
@@ -177,6 +200,39 @@ def build_rank_index(files: Sequence[Path], label_metadata: Dict[str, Any]) -> D
             }
             index[pair_lookup_key(user_id, item_id)] = payload
             index.setdefault(pair_lookup_key(None, item_id), payload)
+    return index
+
+
+def build_unmasked_rank_index(files: Sequence[Path]) -> Dict[str, Dict[str, Any]]:
+    index: Dict[str, Dict[str, Any]] = {}
+    for path in files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        records = payload.get("user_target_records") if isinstance(payload, dict) else None
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            user_id = record.get("user_id")
+            item_id = record.get("item_id")
+            if item_id in (None, ""):
+                continue
+            rank = to_float(record.get("unmasked_rank"))
+            if rank is None:
+                continue
+            score = to_float(record.get("unmasked_score"))
+            if score is None:
+                score = 1.0 / (rank + 1.0)
+            payload_row = {
+                "score": score,
+                "rank": int(rank),
+                "score_source": "unmasked_rank",
+            }
+            index[pair_lookup_key(user_id, item_id)] = payload_row
+            index.setdefault(pair_lookup_key(None, item_id), payload_row)
     return index
 
 
@@ -387,21 +443,32 @@ def enrich_rows(
     score_index: Dict[str, Dict[str, Any]],
     rank_index: Dict[str, Dict[str, Any]],
     checkpoint_index: Optional[Dict[str, Dict[str, Any]]] = None,
+    unmasked_rank_index: Optional[Dict[str, Dict[str, Any]]] = None,
+    score_mode: str = "auto",
 ) -> List[Dict[str, Any]]:
     checkpoint_index = checkpoint_index or {}
+    unmasked_rank_index = unmasked_rank_index or {}
     output: List[Dict[str, Any]] = []
     for row in rows:
         user_id = row.get("user_id")
         item_id = row.get("item_id")
-        payload = checkpoint_index.get(pair_lookup_key(user_id, item_id))
-        if payload is None:
-            payload = score_index.get(pair_lookup_key(user_id, item_id))
-        if payload is None:
-            payload = score_index.get(pair_lookup_key(None, item_id))
-        if payload is None:
-            payload = rank_index.get(pair_lookup_key(user_id, item_id))
-        if payload is None:
-            payload = rank_index.get(pair_lookup_key(None, item_id))
+        lookup_keys = [pair_lookup_key(user_id, item_id), pair_lookup_key(None, item_id)]
+        if score_mode == "checkpoint_score":
+            source_indexes = [checkpoint_index, score_index]
+        elif score_mode == "unmasked_rank":
+            source_indexes = [unmasked_rank_index]
+        elif score_mode == "rank_proxy":
+            source_indexes = [rank_index]
+        else:
+            source_indexes = [checkpoint_index, score_index, unmasked_rank_index, rank_index]
+        payload = None
+        for source_index in source_indexes:
+            for lookup_key in lookup_keys:
+                payload = source_index.get(lookup_key)
+                if payload is not None:
+                    break
+            if payload is not None:
+                break
         output.append(
             {
                 "user_id": "" if user_id is None else str(user_id),
@@ -410,9 +477,75 @@ def enrich_rows(
                 "score": "" if not payload else payload.get("score", ""),
                 "rank": "" if not payload else payload.get("rank", ""),
                 "score_source": "" if not payload else payload.get("score_source", ""),
+                "available": bool(payload),
             }
         )
     return output
+
+
+def auc_from_scores(member_scores: Sequence[float], non_member_scores: Sequence[float]) -> Optional[float]:
+    if not member_scores or not non_member_scores:
+        return None
+    wins = 0.0
+    total = 0
+    for member_score in member_scores:
+        for non_member_score in non_member_scores:
+            total += 1
+            if member_score > non_member_score:
+                wins += 1.0
+            elif member_score == non_member_score:
+                wins += 0.5
+    return float(wins / total) if total else None
+
+
+def mia_metrics(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    member_scores = [
+        float(row["score"])
+        for row in rows
+        if row.get("label") == "member" and to_float(row.get("score")) is not None
+    ]
+    non_member_scores = [
+        float(row["score"])
+        for row in rows
+        if row.get("label") == "non_member" and to_float(row.get("score")) is not None
+    ]
+    if not member_scores or not non_member_scores:
+        return {
+            "attack_accuracy": None,
+            "attack_auc": None,
+            "member_score_gap": None,
+            "risk_level": "not_available",
+        }
+    member_mean = sum(member_scores) / len(member_scores)
+    non_member_mean = sum(non_member_scores) / len(non_member_scores)
+    threshold = (member_mean + non_member_mean) / 2.0
+    higher_is_member = member_mean >= non_member_mean
+    correct = 0
+    total = 0
+    for row in rows:
+        score = to_float(row.get("score"))
+        if score is None or row.get("label") not in {"member", "non_member"}:
+            continue
+        predicted_member = score >= threshold if higher_is_member else score <= threshold
+        is_member = row.get("label") == "member"
+        correct += int(predicted_member == is_member)
+        total += 1
+    auc = auc_from_scores(member_scores, non_member_scores)
+    if auc is not None and not higher_is_member:
+        auc = 1.0 - auc
+    accuracy = float(correct / total) if total else None
+    gap = float(member_mean - non_member_mean)
+    risk_level = "low"
+    if accuracy is not None and accuracy >= 0.75 and auc is not None and auc >= 0.75:
+        risk_level = "high"
+    elif accuracy is not None and accuracy >= 0.6:
+        risk_level = "medium"
+    return {
+        "attack_accuracy": accuracy,
+        "attack_auc": auc,
+        "member_score_gap": gap,
+        "risk_level": risk_level,
+    }
 
 
 def summarize(
@@ -421,6 +554,8 @@ def summarize(
     warnings: Sequence[str],
     model_checkpoint: Optional[str] = None,
     checkpoint_summary: Optional[Dict[str, Any]] = None,
+    unmasked_rank_available: bool = False,
+    score_mode: str = "auto",
 ) -> Dict[str, Any]:
     scored = [row for row in rows if row.get("score") not in (None, "")]
     ranked = [row for row in rows if row.get("rank") not in (None, "")]
@@ -436,25 +571,53 @@ def summarize(
         checkpoint_warning = "checkpoint scoring unavailable: {}".format(
             checkpoint_summary.get("missing_reason") or "unsupported checkpoint"
         )
+    metrics = mia_metrics(rows)
+    score_source = "mixed" if len(sources) > 1 else sources[0] if sources else None
+    proxy_only = bool(score_source in {"rank_proxy", "unmasked_rank"} or (sources and all(source in {"rank_proxy", "unmasked_rank"} for source in sources)))
     return {
         "export_type": "membership_pair_scores",
+        "metric_type": "membership_pair_scores",
+        "summary_type": "membership_score_summary",
         "status": status,
         "pair_count": len(rows),
         "member_count": member_count,
         "non_member_count": non_member_count,
         "scored_pair_count": len(scored),
         "ranked_pair_count": len(ranked),
-        "score_source": "mixed" if len(sources) > 1 else sources[0] if sources else None,
+        "available_pair_count": sum(1 for row in rows if row.get("available") is True),
+        "score_source": score_source,
+        "score_mode": score_mode,
+        "checkpoint_available": bool(
+            checkpoint_summary.get("checkpoint_scoring_available", False)
+        ),
+        "unmasked_rank_available": bool(unmasked_rank_available),
         "checkpoint_scoring_available": bool(
             checkpoint_summary.get("checkpoint_scoring_available", False)
         ),
         "checkpoint_scoring": checkpoint_summary or None,
+        "attack_accuracy": metrics["attack_accuracy"],
+        "attack_auc": metrics["attack_auc"],
+        "member_score_gap": metrics["member_score_gap"],
+        "risk_level": metrics["risk_level"],
+        "proxy_only": proxy_only,
+        "feasibility": {
+            "checkpoint_available": bool(
+                checkpoint_summary.get("checkpoint_scoring_available", False)
+            ),
+            "unmasked_rank_available": bool(unmasked_rank_available),
+            "rank_proxy_available": any(source == "rank_proxy" for source in sources),
+            "future_adapter": (
+                "MMFedRAP/full-model scoring should use a Config + model reconstruction adapter; "
+                "unsupported checkpoints are not guessed."
+            ),
+        },
         "label_source": label_metadata.get("label_source"),
         "label_granularity": label_metadata.get("label_granularity"),
         "warnings": list(warnings) + ([checkpoint_warning] if checkpoint_warning else []),
         "note": (
             "Rows with score_source=score_file use supplied model scores. Rows with "
             "score_source=checkpoint_model_score use a supported FedVLR checkpoint. "
+            "Rows with score_source=unmasked_rank use target_rank_summary full-score ranks. "
             "Rows with score_source=rank_proxy use 1/(rank+1) from exported TopK."
         ),
     }
@@ -482,9 +645,11 @@ def run_export(
     output_json: Path,
     score_files: Sequence[Path],
     recommendation_files: Sequence[Path],
+    target_rank_summary_files: Sequence[Path] = (),
     model_checkpoint: Optional[str] = None,
     model: Optional[str] = None,
     dataset: Optional[str] = None,
+    score_mode: str = "auto",
 ) -> Dict[str, Any]:
     label_metadata = load_membership_labels(membership_labels)
     warnings = list(label_metadata.get("warnings", []))
@@ -493,23 +658,34 @@ def run_export(
         warnings.append("membership labels did not contain member/non-member pairs or items")
     score_index = build_score_index(score_files)
     rank_index = build_rank_index(recommendation_files, label_metadata)
+    unmasked_rank_index = build_unmasked_rank_index(target_rank_summary_files)
     checkpoint_index, checkpoint_summary = build_checkpoint_score_index(
         Path(model_checkpoint) if model_checkpoint else None,
         rows,
         model=model,
         dataset=dataset,
     )
-    output_rows = enrich_rows(rows, score_index, rank_index, checkpoint_index=checkpoint_index)
+    output_rows = enrich_rows(
+        rows,
+        score_index,
+        rank_index,
+        checkpoint_index=checkpoint_index,
+        unmasked_rank_index=unmasked_rank_index,
+        score_mode=score_mode,
+    )
     summary = summarize(
         output_rows,
         label_metadata,
         warnings,
         model_checkpoint=model_checkpoint,
         checkpoint_summary=checkpoint_summary,
+        unmasked_rank_available=bool(unmasked_rank_index),
+        score_mode=score_mode,
     )
     summary["membership_labels"] = str(membership_labels)
     summary["score_files"] = [str(path) for path in score_files]
     summary["recommendation_files"] = [str(path) for path in recommendation_files]
+    summary["target_rank_summary_files"] = [str(path) for path in target_rank_summary_files]
     write_csv(output_csv, output_rows)
     write_json(output_json, summary)
     return summary
@@ -592,9 +768,11 @@ def run_checkpoint_smoke(output_csv: Path, output_json: Path) -> Dict[str, Any]:
         output_json,
         [],
         [],
+        [],
         model_checkpoint=str(checkpoint_path),
         model="FedAvg",
         dataset="synthetic",
+        score_mode="checkpoint_score",
     )
 
 
@@ -615,9 +793,12 @@ def main() -> int:
     elif args.checkpoint_smoke:
         summary = run_checkpoint_smoke(output_csv, output_json)
     else:
-        discovered_labels, discovered_scores, discovered_recommendations = auto_discover_result_files(
-            args.result_dir
-        )
+        (
+            discovered_labels,
+            discovered_scores,
+            discovered_recommendations,
+            discovered_target_rank_summaries,
+        ) = auto_discover_result_files(args.result_dir)
         membership_labels = Path(args.membership_labels) if args.membership_labels else discovered_labels
         if membership_labels is None:
             summary = {
@@ -635,15 +816,21 @@ def main() -> int:
             args.recommendation_file,
             args.recommendation_dir,
         ) + discovered_recommendations
+        target_rank_summary_files = collect_existing_files(
+            args.target_rank_summary,
+            None,
+        ) + discovered_target_rank_summaries
         summary = run_export(
             membership_labels,
             output_csv,
             output_json,
             list(dict.fromkeys(score_files)),
             list(dict.fromkeys(recommendation_files)),
+            list(dict.fromkeys(target_rank_summary_files)),
             model_checkpoint=args.checkpoint_path or args.model_checkpoint,
             model=args.model,
             dataset=args.dataset,
+            score_mode=args.score_mode,
         )
 
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

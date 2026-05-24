@@ -1,0 +1,41 @@
+{
+  "model": "FedAvg",
+  "dataset": "KU",
+  "scenario": "custom",
+  "type": "OpacusToyDemoSmoke",
+  "comment": "opacus_toy_demo_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.05,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {
+    "opacus_toy_demo": {
+      "sample_count": 32,
+      "epochs": 1,
+      "noise_multiplier": 1.0,
+      "max_grad_norm": 1.0,
+      "delta": 0.00001,
+      "seed": 42,
+      "output_json": "opacus_toy_summary.json"
+    }
+  },
+  "extra_config": {
+    "smoke_only": true,
+    "standalone_runner": "privacy_eval/run_opacus_toy_demo.py",
+    "demo_only": true,
+    "fedvlr_training_loop_integrated": false
+  }
+}

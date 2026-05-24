@@ -1,0 +1,33 @@
+{
+  "model": "FedAvg",
+  "dataset": "AMAZON_BEAUTY_POC",
+  "scenario": "custom",
+  "type": "AmazonBeautyPOCTargetSelectionSmoke",
+  "comment": "amazon_beauty_poc_target_selection_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.1,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "standalone_runner": "privacy_eval/select_target_items_for_promotion.py",
+    "baseline_rank_summary": "outputs/results/FedAvg/AMAZON_BEAUTY_POC/AmazonBeautyPOCBaselineObservationSmoke/target_rank_summary.json",
+    "rank_window": [50, 200],
+    "metadata_join": "datasets/AMAZON_BEAUTY_POC/item_metadata.json"
+  }
+}
