@@ -90,3 +90,11 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 - `privacy_eval/build_defense_matrix_summary.py` can summarize smoke config/result cases for exporter consumption. Config-only matrix cases do not imply defense effectiveness.
 - `scripts/export_showcase_artifacts.py` should keep reading new optional sidecars (`membership_score_summary.json`, `target_items_promotion.json`, `target_rank_comparison.json`, `opacus_toy_summary.json`, `secure_aggregation_demo_summary.json`, `defense_matrix_summary.json`) with warnings on missing files and no fabricated success.
 - `datasets/AMAZON_BEAUTY_POC/image_features.npy` is a URL-hash placeholder, not real visual embedding data.
+
+## V2.5 Amazon Image Cache And Security Notes
+
+- `scripts/cache_amazon_item_images.py` may download local display-only product images into `datasets/AMAZON_BEAUTY_POC/item_images/` and write `item_image_manifest.json`. The directory is ignored by Git and ordinary cached images must not be committed.
+- The image cache is for showcase/UI resources only. Do not modify `datasets/AMAZON_BEAUTY_POC/image_features.npy`, and do not describe cached images or URL-hash placeholders as trained visual embeddings.
+- `scripts/extract_amazon_image_features.py` writes optional sidecar features only when local dependencies allow it. Missing `torchvision` or model support should produce `feature_extraction_available=false`, not a failure or fabricated feature file.
+- Target promotion V2.5 configs must stay bounded: no more than 10 epochs for Amazon smoke runs, in-memory target interaction injection only, and `target_promotion_loss` remains feasibility-only unless a validated model-specific local loss hook is added.
+- Membership pair score export should prefer result-dir auto-discovered `checkpoint_score`, then `unmasked_rank`, then TopK `rank_proxy`; unsupported checkpoints must remain explicit feasibility output.

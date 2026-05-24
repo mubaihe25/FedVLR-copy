@@ -41,6 +41,8 @@ PRIVACY_SIDECAR_PATTERNS = (
     "target_rank_comparison*.json",
     "target_score_summary*.json",
     "target_items_promotion*.json",
+    "item_image_manifest*.json",
+    "image_feature_extraction_summary*.json",
     "recommend_topk_manifest*.json",
     "membership_labels*.json",
     "security_sidecar_manifest*.json",
@@ -213,6 +215,7 @@ def find_nested_payload(obj: Any, key_names: Sequence[str]) -> Optional[Dict[str
             "sidecar_type",
             "metadata_type",
             "export_type",
+            "summary_type",
         ):
             payload_type = normalize_key(obj.get(type_key, ""))
             if payload_type in normalized_names:
@@ -360,6 +363,7 @@ class ExperimentBundle:
 
 def extract_dataset_profile(bundle: ExperimentBundle) -> Dict[str, Any]:
     sources = bundle.sources
+    sidecar_sources = bundle.sources + bundle.sidecar_json
     user_count = first_non_none(
         to_float(find_nested_value(source, ["user_count", "n_users", "num_users"]))
         for source in sources
@@ -401,6 +405,18 @@ def extract_dataset_profile(bundle: ExperimentBundle) -> Dict[str, Any]:
         warnings.append("item_count not found in existing result metadata")
     if interaction_count is None:
         warnings.append("interaction_count not found in existing result metadata")
+    item_image_manifest = find_nested_payload(
+        sidecar_sources,
+        ["amazon_item_image_cache", "item_image_manifest", "item_image_cache"],
+    )
+    image_feature_extraction = find_nested_payload(
+        sidecar_sources,
+        ["image_feature_extraction_summary", "image_feature_extraction"],
+    )
+    if item_image_manifest is None:
+        warnings.append("item_image_manifest not found in this experiment")
+    if image_feature_extraction is None:
+        warnings.append("image_feature_extraction_summary not found in this experiment")
 
     return {
         "dataset": dataset,
@@ -410,6 +426,10 @@ def extract_dataset_profile(bundle: ExperimentBundle) -> Dict[str, Any]:
         "item_count": int(item_count) if item_count is not None else None,
         "interaction_count": int(interaction_count) if interaction_count is not None else None,
         "sparsity": sparsity,
+        "item_image_manifest": item_image_manifest
+        or {"status": "not_available", "summary_type": "item_image_manifest"},
+        "image_feature_extraction": image_feature_extraction
+        or {"status": "not_available", "summary_type": "image_feature_extraction_summary"},
         "source_result_dir": bundle.source_dir_string(),
         "note": "Dataset profile is assembled from existing result metadata; missing fields are left null.",
         "warnings": warnings,
@@ -1308,6 +1328,10 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         sources,
         ["secure_aggregation_demo", "secure_aggregation_demo_summary"],
     )
+    image_feature_extraction = find_nested_payload(
+        sources,
+        ["image_feature_extraction_summary", "image_feature_extraction"],
+    )
     target_items_promotion = find_nested_payload(
         sources,
         ["target_items_promotion", "target_items_promotion_summary"],
@@ -1358,6 +1382,8 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         or {"status": "not_available", "summary_type": "opacus_toy_summary"},
         "secure_aggregation_demo": secure_aggregation_demo
         or {"status": "not_available", "summary_type": "secure_aggregation_demo_summary"},
+        "image_feature_extraction": image_feature_extraction
+        or {"status": "not_available", "summary_type": "image_feature_extraction_summary"},
         "target_items_promotion": target_items_promotion
         or {"status": "not_available", "summary_type": "target_items_promotion"},
         "target_rank_comparison": target_rank_comparison
@@ -1403,6 +1429,8 @@ def extract_privacy_payload(bundle: Optional[ExperimentBundle], include_syntheti
         warnings.append("opacus_toy summary not found in this experiment")
     if secure_aggregation_demo is None:
         warnings.append("secure_aggregation_demo summary not found in this experiment")
+    if image_feature_extraction is None:
+        warnings.append("image_feature_extraction_summary not found in this experiment")
     if target_items_promotion is None:
         warnings.append("target_items_promotion result not found in this experiment")
     if target_rank_comparison is None:

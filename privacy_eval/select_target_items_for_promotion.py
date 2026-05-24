@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inter-file")
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--min-rank", type=int, default=50)
-    parser.add_argument("--max-rank", type=int, default=200)
+    parser.add_argument("--max-rank", type=int, default=120)
     parser.add_argument("--min-train-count", type=int, default=1)
     parser.add_argument("--top-n", type=int, default=5)
     return parser

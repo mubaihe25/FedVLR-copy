@@ -118,15 +118,46 @@ def collect_existing_files(paths: Sequence[str], directory: Optional[str]) -> Li
 
 def auto_discover_result_files(
     result_dir: Optional[str],
-) -> Tuple[Optional[Path], List[Path], List[Path], List[Path]]:
+) -> Tuple[Optional[Path], List[Path], List[Path], List[Path], Optional[Path], Dict[str, Any]]:
     if not result_dir:
-        return None, [], [], []
+        return None, [], [], [], None, {}
     root = Path(result_dir)
     if not root.exists():
-        return None, [], [], []
+        return None, [], [], [], None, {}
     labels = sorted(root.rglob("membership_labels.json"))
     score_files = sorted(root.rglob("membership_pair_scores.csv"))
     target_rank_files = sorted(root.rglob("target_rank_summary*.json"))
+    checkpoint_files: List[Path] = []
+    for pattern in ("*.pkl", "*.pickle", "*.pt", "*.pth"):
+        checkpoint_files.extend(root.rglob(pattern))
+    checkpoint_files = [
+        path
+        for path in checkpoint_files
+        if path.is_file()
+        and "membership_pair_scores" not in path.name
+        and "__pycache__" not in path.parts
+    ]
+    checkpoint = (
+        sorted(checkpoint_files, key=lambda item: item.stat().st_mtime, reverse=True)[0]
+        if checkpoint_files
+        else None
+    )
+    metadata: Dict[str, Any] = {}
+    for pattern in ("*.experiment_result.json", "*.experiment_summary.json"):
+        candidates = sorted(root.rglob(pattern), key=lambda item: item.stat().st_mtime, reverse=True)
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8-sig"))
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                metadata.setdefault("model", payload.get("model"))
+                metadata.setdefault("dataset", payload.get("dataset"))
+                metadata.setdefault("metadata_source", str(candidate))
+            if metadata.get("model") or metadata.get("dataset"):
+                break
+        if metadata.get("model") or metadata.get("dataset"):
+            break
     recommendation_files = []
     for topk_dir in root.rglob("recommend_topk"):
         if topk_dir.is_dir():
@@ -137,6 +168,8 @@ def auto_discover_result_files(
         score_files,
         recommendation_files,
         target_rank_files,
+        checkpoint,
+        metadata,
     )
 
 
@@ -798,6 +831,8 @@ def main() -> int:
             discovered_scores,
             discovered_recommendations,
             discovered_target_rank_summaries,
+            discovered_checkpoint,
+            discovered_metadata,
         ) = auto_discover_result_files(args.result_dir)
         membership_labels = Path(args.membership_labels) if args.membership_labels else discovered_labels
         if membership_labels is None:
@@ -827,11 +862,21 @@ def main() -> int:
             list(dict.fromkeys(score_files)),
             list(dict.fromkeys(recommendation_files)),
             list(dict.fromkeys(target_rank_summary_files)),
-            model_checkpoint=args.checkpoint_path or args.model_checkpoint,
-            model=args.model,
-            dataset=args.dataset,
+            model_checkpoint=args.checkpoint_path or args.model_checkpoint or (
+                str(discovered_checkpoint) if discovered_checkpoint else None
+            ),
+            model=args.model or discovered_metadata.get("model"),
+            dataset=args.dataset or discovered_metadata.get("dataset"),
             score_mode=args.score_mode,
         )
+        summary["auto_discovery"] = {
+            "result_dir": args.result_dir,
+            "checkpoint_path": str(discovered_checkpoint) if discovered_checkpoint else None,
+            "model": args.model or discovered_metadata.get("model"),
+            "dataset": args.dataset or discovered_metadata.get("dataset"),
+            "metadata_source": discovered_metadata.get("metadata_source"),
+        }
+        write_json(output_json, summary)
 
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

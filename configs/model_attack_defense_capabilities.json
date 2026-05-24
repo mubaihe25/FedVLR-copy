@@ -334,7 +334,9 @@
         "rating_value": "float",
         "only_non_train_positive_targets": "boolean",
         "target_promotion_loss": "boolean",
-        "target_promotion_loss_lambda": "float"
+        "target_promotion_loss_lambda": "float",
+        "target_promotion_loss_weight": "float",
+        "loss_weight": "float"
       },
       "default_values": {
         "enabled": false,
@@ -345,7 +347,10 @@
         "max_injections_per_client": 5,
         "repeat_target_interactions": false,
         "only_non_train_positive_targets": true,
-        "target_promotion_loss": false
+        "target_promotion_loss": false,
+        "target_promotion_loss_lambda": 0.0,
+        "target_promotion_loss_weight": 0.0,
+        "loss_weight": 0.0
       },
       "recommended_models": ["FedRAP", "MMFedRAP"],
       "validated_models": [],

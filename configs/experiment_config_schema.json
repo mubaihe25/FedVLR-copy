@@ -171,6 +171,8 @@
             "only_non_train_positive_targets": { "type": "boolean", "default": true },
             "target_promotion_loss": { "type": "boolean", "default": false },
             "target_promotion_loss_lambda": { "type": "number", "minimum": 0 },
+            "target_promotion_loss_weight": { "type": "number", "minimum": 0 },
+            "loss_weight": { "type": "number", "minimum": 0 },
             "output_json": { "type": "string" }
           },
           "additionalProperties": true

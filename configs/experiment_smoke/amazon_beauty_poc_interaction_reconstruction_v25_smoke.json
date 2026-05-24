@@ -1,0 +1,40 @@
+{
+  "model": "FedAvg",
+  "dataset": "AMAZON_BEAUTY_POC",
+  "scenario": "privacy_observation",
+  "type": "AmazonBeautyPOCInteractionReconstructionV25Smoke",
+  "comment": "amazon_beauty_poc_interaction_reconstruction_v25_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": ["interaction_reconstruction_probe"],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.1,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {
+    "interaction_reconstruction_probe": {
+      "interaction_reconstruction_topk": 50,
+      "min_item_rows": 2,
+      "hit_k_values": [10, 20, 50],
+      "interaction_file": "datasets/AMAZON_BEAUTY_POC/inter.csv",
+      "image_feature_file": "datasets/AMAZON_BEAUTY_POC/image_features.npy",
+      "nearest_neighbor_expansion": false
+    }
+  },
+  "extra_config": {
+    "smoke_only": true,
+    "candidate_reconstruction_only": true,
+    "image_features_note": "URL-hash placeholder, not visual embeddings"
+  }
+}

@@ -77,7 +77,14 @@ class TargetInteractionInjectionPlanner(BaseAttack):
             or self.config.get("target_promotion_loss", False)
         )
         self.target_promotion_loss_lambda = float(
-            self.config.get("target_promotion_loss_lambda", 0.0) or 0.0
+            self.config.get(
+                "loss_weight",
+                self.config.get(
+                    "target_promotion_loss_weight",
+                    self.config.get("target_promotion_loss_lambda", 0.0),
+                ),
+            )
+            or 0.0
         )
         self.injected_clients: List[str] = []
         self.injected_interactions: List[Dict[str, Any]] = []
@@ -111,6 +118,7 @@ class TargetInteractionInjectionPlanner(BaseAttack):
             "target_promotion_loss": {
                 "enabled": self.target_promotion_loss_enabled,
                 "lambda": self.target_promotion_loss_lambda,
+                "loss_weight": self.target_promotion_loss_lambda,
                 "status": "feasibility_only",
                 "reason": "FedVLR local train path does not expose a stable target-score loss hook for all models.",
             },
@@ -326,6 +334,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeat-target-interactions", action="store_true")
     parser.add_argument("--rating-value", type=float, default=1.0)
     parser.add_argument("--only-non-train-positive-targets", action="store_true", default=True)
+    parser.add_argument("--target-promotion-loss", action="store_true")
+    parser.add_argument("--loss-weight", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--smoke", action="store_true")
@@ -453,6 +463,8 @@ def build_interaction_injection_plan(
     repeat_target_interactions: bool = False,
     rating_value: float = 1.0,
     only_non_train_positive_targets: bool = True,
+    target_promotion_loss: bool = False,
+    loss_weight: float = 0.0,
     seed: int = 42,
 ) -> Dict[str, Any]:
     rng = random.Random(seed)
@@ -518,6 +530,13 @@ def build_interaction_injection_plan(
         "repeat_target_interactions": repeat_target_interactions,
         "rating_value": rating_value,
         "only_non_train_positive_targets": only_non_train_positive_targets,
+        "target_promotion_loss": {
+            "enabled": bool(target_promotion_loss),
+            "lambda": float(loss_weight or 0.0),
+            "loss_weight": float(loss_weight or 0.0),
+            "status": "feasibility_only",
+            "reason": "Planner cannot add model-specific target-score loss without the training hook.",
+        },
         "malicious_client_ids": malicious_clients,
         "malicious_client_count": len(malicious_clients),
         "planned_interaction_count": len(planned_interactions),
@@ -642,13 +661,15 @@ def main() -> int:
             injection_ratio=args.injection_ratio,
             malicious_client_ids=args.malicious_client_ids,
             malicious_client_ratio=args.malicious_client_ratio,
-        max_injections_per_client=args.max_injections_per_client,
-        target_user_strategy=args.target_user_strategy,
-        repeat_target_interactions=args.repeat_target_interactions,
-        rating_value=args.rating_value,
-        only_non_train_positive_targets=args.only_non_train_positive_targets,
-        seed=args.seed,
-    )
+            max_injections_per_client=args.max_injections_per_client,
+            target_user_strategy=args.target_user_strategy,
+            repeat_target_interactions=args.repeat_target_interactions,
+            rating_value=args.rating_value,
+            only_non_train_positive_targets=args.only_non_train_positive_targets,
+            target_promotion_loss=args.target_promotion_loss,
+            loss_weight=args.loss_weight,
+            seed=args.seed,
+        )
     write_json(output_json, summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

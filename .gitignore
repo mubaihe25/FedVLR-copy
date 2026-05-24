@@ -36,6 +36,7 @@ outputs/
 
 # Locally converted PoC datasets
 datasets/AMAZON_BEAUTY_POC/
+datasets/AMAZON_BEAUTY_POC/item_images/
 
 # OS files
 .DS_Store
