@@ -1,0 +1,49 @@
+{
+  "model": "FedRAP",
+  "dataset": "AMAZON_BEAUTY_POC",
+  "scenario": "attack_only",
+  "type": "FedRAPAmazonSecurityMatrixSmoke",
+  "comment": "fedrap_amazon_security_smoke",
+  "enabled_attacks": ["target_interaction_injection"],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": true, "mode": "ratio", "ratio": 0.3, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.1,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001,
+    "alpha": 0.1,
+    "beta": 0.1
+  },
+  "attack_params": {
+    "target_interaction_injection": {
+      "enabled": true,
+      "target_item_ids": ["0"],
+      "target_item_strategy": "explicit",
+      "target_user_strategy": "active_users",
+      "injection_ratio": 0.5,
+      "malicious_client_ratio": 0.3,
+      "max_injections_per_client": 5,
+      "repeat_target_interactions": true,
+      "rating_value": 5.0,
+      "only_non_train_positive_targets": true,
+      "output_json": "target_interaction_plan.json"
+    }
+  },
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "model_security_matrix_case": "fedrap_amazon_security",
+    "target_rank_score_diagnostics": true,
+    "target_item_ids": ["0"],
+    "expected_validation_warning": "AMAZON_BEAUTY_POC is not listed for FedRAP in model_attack_defense_capabilities.json; keep as unsupported unless adapted."
+  }
+}

@@ -1,0 +1,458 @@
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CAPABILITY_PATH = ROOT / "configs" / "model_attack_defense_capabilities.json"
+
+DEFAULT_OUTPUT = (
+    ROOT
+    / "outputs"
+    / "model_security_capability_matrix"
+    / "model_security_capability_matrix.json"
+)
+
+TARGET_MODELS: List[Tuple[str, str]] = [
+    ("FedAvg", "AMAZON_BEAUTY_POC"),
+    ("FedAvg", "KU"),
+    ("FedRAP", "KU"),
+    ("FedRAP", "AMAZON_BEAUTY_POC"),
+    ("MMFedRAP", "KU"),
+    ("MMFedAvg", "KU"),
+]
+
+CAPABILITIES = [
+    "baseline_training",
+    "topk_export",
+    "target_rank_summary",
+    "target_interaction_injection",
+    "target_promotion_loss",
+    "membership_score_unmasked_rank_mia",
+    "interaction_reconstruction",
+    "update_leakage_risk",
+    "robust_aggregation",
+    "dp_noise",
+    "secure_aggregation_sim",
+    "checkpoint_scorer",
+]
+
+KNOWN_ARTIFACTS = {
+    "fedavg_amazon_v25_result": ROOT
+    / "outputs"
+    / "results"
+    / "FedAvg"
+    / "AMAZON_BEAUTY_POC"
+    / "AmazonBeautyPOCTargetPromotionV25Smoke",
+    "fedavg_amazon_ir_v25": ROOT
+    / "outputs"
+    / "results"
+    / "FedAvg"
+    / "AMAZON_BEAUTY_POC"
+    / "AmazonBeautyPOCInteractionReconstructionV25Smoke"
+    / "interaction_reconstruction_summary.json",
+    "fedavg_ku_ir": ROOT
+    / "outputs"
+    / "results"
+    / "FedAvg"
+    / "KU"
+    / "SecurityMatrixSmoke"
+    / "interaction_reconstruction_summary.json",
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build a conservative multi-model FedVLR security capability matrix."
+    )
+    parser.add_argument(
+        "--capabilities",
+        default=str(CAPABILITY_PATH),
+        help="Path to model_attack_defense_capabilities.json.",
+    )
+    parser.add_argument(
+        "--output-json",
+        default=str(DEFAULT_OUTPUT),
+        help="Where to write model_security_capability_matrix.json.",
+    )
+    return parser.parse_args()
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def load_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def rel(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def first_existing(paths: Iterable[Path]) -> Optional[Path]:
+    for path in paths:
+        if path.exists():
+            return path
+    return None
+
+
+def model_records(capabilities: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {
+        str(item.get("name")): item
+        for item in capabilities.get("models", [])
+        if item.get("name")
+    }
+
+
+def dataset_supported(record: Dict[str, Any], dataset: str) -> bool:
+    supported = record.get("supported_datasets") or []
+    return not supported or dataset in supported
+
+
+def artifact_evidence(path: Path, label: str) -> str:
+    if path.exists():
+        return "{}: {}".format(label, rel(path))
+    return "{} not found at {}".format(label, rel(path))
+
+
+def fedavg_amazon_v25_evidence(capability: str) -> Optional[str]:
+    result_dir = KNOWN_ARTIFACTS["fedavg_amazon_v25_result"]
+    mapping = {
+        "topk_export": result_dir / "recommend_topk" / "recommend_topk_manifest.json",
+        "target_rank_summary": result_dir / "target_rank_comparison.json",
+        "target_interaction_injection": result_dir / "target_interaction_plan.json",
+        "membership_score_unmasked_rank_mia": result_dir / "membership_score_summary.json",
+        "secure_aggregation_sim": result_dir / "secure_aggregation_demo_summary.json",
+    }
+    path = mapping.get(capability)
+    if path:
+        return artifact_evidence(path, "FedAvg Amazon V2.5 evidence")
+    return None
+
+
+def status_for(
+    model: str,
+    dataset: str,
+    capability: str,
+    records: Dict[str, Dict[str, Any]],
+) -> Dict[str, str]:
+    record = records.get(model, {})
+    if not record:
+        return {
+            "status": "unsupported",
+            "evidence": "model is absent from configs/model_attack_defense_capabilities.json",
+            "reason": "unknown model",
+            "recommended_demo_usage": "do not expose as selectable until the model is registered",
+        }
+
+    if not dataset_supported(record, dataset):
+        return {
+            "status": "unsupported",
+            "evidence": "supported_datasets={}".format(record.get("supported_datasets", [])),
+            "reason": "{} is not listed for {} in the capability matrix".format(
+                dataset, model
+            ),
+            "recommended_demo_usage": "show as unsupported dataset/model pairing",
+        }
+
+    compatibility = str(record.get("compatibility_status", "unknown"))
+    if compatibility == "blocked":
+        return {
+            "status": "unsupported",
+            "evidence": str(record.get("notes", "blocked model")),
+            "reason": "model is blocked in the capability registry",
+            "recommended_demo_usage": "hide from security demos",
+        }
+
+    evidence = fedavg_amazon_v25_evidence(capability)
+    if model == "FedAvg" and dataset == "AMAZON_BEAUTY_POC" and evidence:
+        if capability == "target_rank_summary":
+            return {
+                "status": "supported",
+                "evidence": evidence + "; target item 0 moved from rank 170 to 3 unmasked",
+                "reason": "real V2.5 Amazon smoke produced target_rank_comparison.json",
+                "recommended_demo_usage": "primary target-rank demonstration; keep masked TopK hit caveat visible",
+            }
+        if capability == "target_interaction_injection":
+            return {
+                "status": "supported",
+                "evidence": evidence,
+                "reason": "hook_active target interaction plan was emitted in the real V2.5 run",
+                "recommended_demo_usage": "primary target interaction injection smoke",
+            }
+        if capability == "membership_score_unmasked_rank_mia":
+            return {
+                "status": "partial",
+                "evidence": evidence,
+                "reason": "mixed unmasked-rank/rank-proxy evidence exists, but checkpoint_score was not available",
+                "recommended_demo_usage": "show as score/rank MIA with proxy boundary",
+            }
+        if capability == "topk_export":
+            return {
+                "status": "supported",
+                "evidence": evidence,
+                "reason": "manifest-backed TopK export prevents per-user file overwrite",
+                "recommended_demo_usage": "show as reusable observation infrastructure",
+            }
+        if capability == "secure_aggregation_sim":
+            return {
+                "status": "partial",
+                "evidence": evidence,
+                "reason": "synthetic pairwise-mask cancellation demo only",
+                "recommended_demo_usage": "show as demo-only secure aggregation boundary",
+            }
+
+    if capability == "baseline_training":
+        return {
+            "status": "supported",
+            "evidence": "model registry compatibility_status={}".format(compatibility),
+            "reason": "baseline scenario is in validated_combinations for registered models",
+            "recommended_demo_usage": "allow validate-only and bounded smoke runs",
+        }
+
+    if capability == "topk_export":
+        return {
+            "status": "supported",
+            "evidence": "utils/topk_evaluator.py writes per-user filenames and recommend_topk_manifest.json",
+            "reason": "TopK export sits in the shared evaluator path",
+            "recommended_demo_usage": "safe to expose as model-agnostic export when save_recommended_topk=true",
+        }
+
+    if capability == "target_rank_summary":
+        return {
+            "status": "partial",
+            "evidence": "utils/federated/trainer.py records unmasked/masked target rank when target_item_ids are configured",
+            "reason": "diagnostic infrastructure is shared, but target movement is only validated on FedAvg Amazon",
+            "recommended_demo_usage": "show as diagnostic; do not claim model-wide target promotion success",
+        }
+
+    if capability == "target_interaction_injection":
+        return {
+            "status": "partial",
+            "evidence": "attacks/target_interaction_injection.py modifies only in-memory malicious-client loaders",
+            "reason": "hook is model-agnostic, but effectiveness is model/dataset-specific",
+            "recommended_demo_usage": "enable only in smoke configs and label as experimental",
+        }
+
+    if capability == "target_promotion_loss":
+        return {
+            "status": "future_adapter",
+            "evidence": "target_interaction_injection summary marks target_promotion_loss status=feasibility_only",
+            "reason": "no stable model-specific local target-score loss hook is implemented",
+            "recommended_demo_usage": "show as future adapter, not an implemented attack",
+        }
+
+    if capability == "membership_score_unmasked_rank_mia":
+        if model in {"FedAvg", "FedRAP"}:
+            return {
+                "status": "partial",
+                "evidence": "privacy_eval/export_membership_pair_scores.py supports checkpoint_score for FedAvg/FedRAP-style checkpoints, then unmasked_rank, then rank_proxy",
+                "reason": "score/rank export exists, but checkpoint availability depends on saved parameter format",
+                "recommended_demo_usage": "show with score_source and proxy_only fields",
+            }
+        return {
+            "status": "partial",
+            "evidence": "unmasked_rank and rank_proxy paths are model-independent; full checkpoint scorer needs adapter",
+            "reason": "MM model checkpoint_score path is a future adapter",
+            "recommended_demo_usage": "show rank-based MIA only unless a model scorer is added",
+        }
+
+    if capability == "interaction_reconstruction":
+        if model == "FedAvg" and dataset == "AMAZON_BEAUTY_POC":
+            return {
+                "status": "supported",
+                "evidence": artifact_evidence(
+                    KNOWN_ARTIFACTS["fedavg_amazon_ir_v25"],
+                    "FedAvg Amazon interaction reconstruction V2.5",
+                )
+                + "; hit@10/20/50 = 0.20/0.30/0.36 when available",
+                "reason": "real participant_params smoke produced per-client candidates",
+                "recommended_demo_usage": "show as candidate reconstruction only, not full history recovery",
+            }
+        if model == "FedAvg" and dataset == "KU":
+            return {
+                "status": "partial",
+                "evidence": artifact_evidence(
+                    KNOWN_ARTIFACTS["fedavg_ku_ir"], "FedAvg KU interaction reconstruction"
+                ),
+                "reason": "candidate reconstruction probe exists; V2.5 headline result is Amazon FedAvg",
+                "recommended_demo_usage": "show as probe when participant_params are present",
+            }
+        return {
+            "status": "partial",
+            "evidence": "privacy_eval/interaction_reconstruction_probe.py reads real participant_params and item-like updates",
+            "reason": "participant_params are shared, but per-model item-like parameter naming may need validation",
+            "recommended_demo_usage": "validate before front-end effect claims",
+        }
+
+    if capability == "update_leakage_risk":
+        return {
+            "status": "partial",
+            "evidence": "privacy_eval/update_leakage_risk_probe.py summarizes real participant_params without saving raw updates",
+            "reason": "shared hook can observe updates, but risk magnitude is run-specific",
+            "recommended_demo_usage": "show as update-risk summary, not reconstruction",
+        }
+
+    if capability == "robust_aggregation":
+        if model in {"FedRAP", "MMFedRAP"}:
+            return {
+                "status": "supported",
+                "evidence": "registry lists robust_defense and model has validated trimmed_mean-style defenses",
+                "reason": "robust aggregation is the recommended defense track for RAP-style showcase models",
+                "recommended_demo_usage": "safe for validate-only and bounded KU smoke matrix",
+            }
+        return {
+            "status": "partial",
+            "evidence": "defenses/robust_defense.py, trimmed_mean, median, krum, multi_krum, bulyan are available",
+            "reason": "infrastructure is shared, but per-model target-promotion defense effect is not fully validated",
+            "recommended_demo_usage": "show config-level support unless a matching result exists",
+        }
+
+    if capability == "dp_noise":
+        return {
+            "status": "partial",
+            "evidence": "defenses/dp_noise_defense.py is central DP-style clipping plus Gaussian noise; Opacus toy remains standalone",
+            "reason": "formal_accountant=false for FedVLR training",
+            "recommended_demo_usage": "label as DP-style, not formal DP",
+        }
+
+    if capability == "secure_aggregation_sim":
+        return {
+            "status": "partial",
+            "evidence": "defenses/secure_aggregation_sim.py and privacy_eval/run_secure_aggregation_demo.py are simulation/demo paths",
+            "reason": "not a production cryptographic protocol and not equivalent to robust filtering",
+            "recommended_demo_usage": "show as simulation-only boundary",
+        }
+
+    if capability == "checkpoint_scorer":
+        if model in {"FedAvg", "FedRAP"}:
+            return {
+                "status": "partial",
+                "evidence": "privacy_eval/export_membership_pair_scores.py can score FedAvg/FedRAP-style parameter pickles when item_commonality and client_models exist",
+                "reason": "checkpoint_score depends on saved checkpoint format; unsupported checkpoints are not guessed",
+                "recommended_demo_usage": "show as available when checkpoint_available=true",
+            }
+        return {
+            "status": "future_adapter",
+            "evidence": "full model reconstruction adapter is required for multimodal checkpoints",
+            "reason": "MMFedRAP/MMFedAvg checkpoint scoring is not wired through Config + get_model + load_state_dict",
+            "recommended_demo_usage": "show as future adapter; use unmasked_rank/rank_proxy meanwhile",
+        }
+
+    return {
+        "status": "not_tested",
+        "evidence": "no rule",
+        "reason": "capability rule missing",
+        "recommended_demo_usage": "hide until reviewed",
+    }
+
+
+def build_matrix(capabilities: Dict[str, Any]) -> Dict[str, Any]:
+    records = model_records(capabilities)
+    entries: List[Dict[str, Any]] = []
+    for model, dataset in TARGET_MODELS:
+        for capability in CAPABILITIES:
+            result = status_for(model, dataset, capability, records)
+            entries.append(
+                {
+                    "model": model,
+                    "dataset": dataset,
+                    "capability": capability,
+                    "status": result["status"],
+                    "evidence": result["evidence"],
+                    "reason": result["reason"],
+                    "recommended_demo_usage": result["recommended_demo_usage"],
+                }
+            )
+
+    counts: Dict[str, int] = {}
+    for entry in entries:
+        counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+
+    supported_demos = [
+        {
+            "model": item["model"],
+            "dataset": item["dataset"],
+            "capability": item["capability"],
+            "status": item["status"],
+            "recommended_demo_usage": item["recommended_demo_usage"],
+        }
+        for item in entries
+        if item["status"] in {"supported", "partial"}
+    ]
+    unsupported_reasons = [
+        {
+            "model": item["model"],
+            "dataset": item["dataset"],
+            "capability": item["capability"],
+            "status": item["status"],
+            "reason": item["reason"],
+        }
+        for item in entries
+        if item["status"] in {"unsupported", "future_adapter", "not_tested"}
+    ]
+
+    matrix_by_model: Dict[str, Dict[str, Dict[str, str]]] = {}
+    for item in entries:
+        key = "{}::{}".format(item["model"], item["dataset"])
+        matrix_by_model.setdefault(key, {})[item["capability"]] = {
+            "status": item["status"],
+            "reason": item["reason"],
+        }
+
+    return {
+        "summary_type": "model_security_capability_matrix",
+        "generated_at": utc_now(),
+        "scope": {
+            "repository": "FedVLR",
+            "no_api_or_frontend_change": True,
+            "ordinary_outputs_not_for_git": True,
+        },
+        "models": [{"model": model, "dataset": dataset} for model, dataset in TARGET_MODELS],
+        "capabilities": CAPABILITIES,
+        "status_counts": counts,
+        "entries": entries,
+        "matrix_by_model": matrix_by_model,
+        "supported_demos": supported_demos,
+        "unsupported_reasons": unsupported_reasons,
+        "recommended_frontend_labels": {
+            "supported": "validated / displayable with evidence",
+            "partial": "partial support / display with boundary note",
+            "unsupported": "unsupported pairing",
+            "future_adapter": "future adapter required",
+            "not_tested": "not tested",
+            "model_note": "MMFedRAP is the multimodal showcase model; FedAvg is the strongest attack/defense validation base.",
+            "target_promotion_note": "FedAvg Amazon rank movement must not be generalized to every model, and masked TopK exposure may remain zero.",
+        },
+        "warnings": [
+            "target_promotion_loss is feasibility-only until a model-specific local score loss hook is validated",
+            "dp_noise is central DP-style noise without a formal accountant",
+            "secure_aggregation_sim is simulation/demo only",
+            "rank-only MIA evidence is proxy evidence",
+        ],
+    }
+
+
+def main() -> int:
+    args = parse_args()
+    capabilities = load_json(Path(args.capabilities))
+    matrix = build_matrix(capabilities)
+    output_path = Path(args.output_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"output_json": rel(output_path), "status_counts": matrix["status_counts"]}, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

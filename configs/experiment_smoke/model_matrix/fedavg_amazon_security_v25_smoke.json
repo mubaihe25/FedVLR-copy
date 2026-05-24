@@ -1,0 +1,51 @@
+{
+  "model": "FedAvg",
+  "dataset": "AMAZON_BEAUTY_POC",
+  "scenario": "attack_only",
+  "type": "FedAvgAmazonSecurityV25MatrixSmoke",
+  "comment": "fedavg_amazon_security_v25_smoke",
+  "enabled_attacks": ["target_interaction_injection"],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": true, "mode": "ratio", "ratio": 0.5, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.3,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {
+    "target_interaction_injection": {
+      "enabled": true,
+      "target_item_ids": ["0"],
+      "target_item_strategy": "explicit",
+      "target_user_strategy": "active_users",
+      "injection_ratio": 1.0,
+      "malicious_client_ratio": 0.5,
+      "max_injections_per_client": 10,
+      "repeat_target_interactions": true,
+      "rating_value": 5.0,
+      "only_non_train_positive_targets": true,
+      "target_promotion_loss": true,
+      "loss_weight": 0.05,
+      "target_promotion_loss_lambda": 0.05,
+      "output_json": "target_interaction_plan.json"
+    }
+  },
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "model_security_matrix_case": "fedavg_amazon_security_v25",
+    "target_rank_score_diagnostics": true,
+    "target_item_ids": ["0"],
+    "target_promotion_loss_boundary": "feasibility_only",
+    "known_v25_result_note": "Prior V2.5 FedAvg Amazon run moved item 0 unmasked rank 170 -> 3, while masked TopK target hit remained 0."
+  }
+}

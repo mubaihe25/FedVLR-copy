@@ -98,3 +98,12 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 - `scripts/extract_amazon_image_features.py` writes optional sidecar features only when local dependencies allow it. Missing `torchvision` or model support should produce `feature_extraction_available=false`, not a failure or fabricated feature file.
 - Target promotion V2.5 configs must stay bounded: no more than 10 epochs for Amazon smoke runs, in-memory target interaction injection only, and `target_promotion_loss` remains feasibility-only unless a validated model-specific local loss hook is added.
 - Membership pair score export should prefer result-dir auto-discovered `checkpoint_score`, then `unmasked_rank`, then TopK `rank_proxy`; unsupported checkpoints must remain explicit feasibility output.
+
+## Model Security Capability Matrix
+
+- `scripts/build_model_security_capability_matrix.py` is the source of the backend model-security support matrix. It must write repository-relative evidence paths and conservative statuses: `supported`, `partial`, `unsupported`, `future_adapter`, or `not_tested`.
+- `scripts/export_model_security_capability_artifacts.py` may copy the matrix into `outputs/showcase_artifacts/model_security_capability_matrix/` and split supported demos, unsupported reasons, frontend labels, and manifest files for API/frontend consumption. Missing or partial support must remain explicit and must not be promoted to success.
+- Treat TopK export, TopK manifest aggregation, target-rank diagnostics, rank/proxy MIA export, update leakage risk summaries, and candidate interaction reconstruction as shared observation infrastructure when the model uses the common federated trainer path.
+- Treat target promotion effectiveness, target-promotion loss, checkpoint scoring, and parameter-name-sensitive reconstruction as model-specific. FedAvg Amazon V2.5 target-rank gain is evidence for FedAvg on `AMAZON_BEAUTY_POC`, not for every model.
+- MMFedRAP is the multimodal showcase model; FedAvg is the strongest current attack/defense validation base. Do not rewrite docs, configs, or artifacts to imply that MMFedRAP has inherited FedAvg target-promotion success without a matching smoke result.
+- New model-matrix smoke configs belong under `configs/experiment_smoke/model_matrix/`. Validate them with `.\.venv\Scripts\python.exe scripts\launch_experiment.py --config <config> --validate-only`; dataset/model mismatch warnings are acceptable evidence for `unsupported` when the registry does not list that pairing.
