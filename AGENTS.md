@@ -93,7 +93,7 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 
 ## V2.5 Amazon Image Cache And Security Notes
 
-- `scripts/cache_amazon_item_images.py` may download local display-only product images into `datasets/AMAZON_BEAUTY_POC/item_images/` and write `item_image_manifest.json`. The directory is ignored by Git and ordinary cached images must not be committed.
+- `scripts/cache_amazon_item_images.py` may download up to the requested bounded limit of local display-only product images into `datasets/AMAZON_BEAUTY_POC/item_images/`, generate optional thumbnails under `item_images/thumbs/`, and write `item_image_manifest.json`. Prioritize target items, V2.5 recommendation rows, showcase recommendation frequency, then high-interaction items. The directories are ignored by Git and ordinary cached images must not be committed.
 - The image cache is for showcase/UI resources only. Do not modify `datasets/AMAZON_BEAUTY_POC/image_features.npy`, and do not describe cached images or URL-hash placeholders as trained visual embeddings.
 - `scripts/extract_amazon_image_features.py` writes optional sidecar features only when local dependencies allow it. Missing `torchvision` or model support should produce `feature_extraction_available=false`, not a failure or fabricated feature file.
 - Target promotion V2.5 configs must stay bounded: no more than 10 epochs for Amazon smoke runs, in-memory target interaction injection only, and `target_promotion_loss` remains feasibility-only unless a validated model-specific local loss hook is added.
