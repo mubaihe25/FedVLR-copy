@@ -99,6 +99,17 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 - Target promotion V2.5 configs must stay bounded: no more than 10 epochs for Amazon smoke runs, in-memory target interaction injection only, and `target_promotion_loss` remains feasibility-only unless a validated model-specific local loss hook is added.
 - Membership pair score export should prefer result-dir auto-discovered `checkpoint_score`, then `unmasked_rank`, then TopK `rank_proxy`; unsupported checkpoints must remain explicit feasibility output.
 
+## Security Artifact V3 Panels
+
+- `scripts/export_security_artifact_v3.py` creates frontend-ready V3 panels from existing artifacts only. It must not run training, change the API/frontend, or infer missing attack/defense success.
+- The default V3 output path is `outputs/showcase_artifacts/amazon_beauty_poc_security_v3/` and should contain exactly the core panel files: `scenario_profile.json`, `runtime_timeline.json`, `training_curves.json`, `target_manipulation_metrics.json`, `membership_inference_panel.json`, `update_leakage_panel.json`, `aggregation_defense_panel.json`, `privacy_defense_panel.json`, `model_support_panel.json`, and `frontend_summary.json`.
+- Keep V3 path fields repository-relative. Do not expose local absolute `D:\...` or `C:\...` paths in frontend-facing artifacts.
+- In `target_manipulation_metrics.json`, keep `attack_topk_hit=false` when masked TopK exposure is missing, even if unmasked target rank improved or entered Top50.
+- In `membership_inference_panel.json`, preserve `evidence_type` and `proxy_only`; never relabel rank/unmasked-rank evidence as checkpoint score.
+- In `update_leakage_panel.json`, describe results as candidate reconstruction only, not full user history.
+- In `aggregation_defense_panel.json`, config-only or validate-only cases must use a status such as `configured_only` and must not fabricate `recall_after`, `ndcg_after`, or recovery metrics.
+- `scripts/cache_amazon_item_images.py` defaults to a bounded 1000-item cache and records `cached_count`, `thumbnail_count`, `failed_count`, and `source_priority`. It must continue to leave `image_features.npy` unchanged.
+
 ## Model Security Capability Matrix
 
 - `scripts/build_model_security_capability_matrix.py` is the source of the backend model-security support matrix. It must write repository-relative evidence paths and conservative statuses: `supported`, `partial`, `unsupported`, `future_adapter`, or `not_tested`.

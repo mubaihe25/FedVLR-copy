@@ -200,6 +200,17 @@ Useful V2 smoke commands:
 - `configs/experiment_smoke/amazon_beauty_poc_target_promotion_v25_smoke.json` is the bounded Amazon target-promotion smoke. It stays at no more than 10 epochs, keeps target interaction injection in-memory only, and treats `target_promotion_loss` as feasibility-only until a validated model-specific score loss hook exists.
 - `privacy_eval/export_membership_pair_scores.py` can auto-discover rank summaries, TopK files, and compatible checkpoints from `--result-dir`; evidence priority remains `checkpoint_score > unmasked_rank > rank_proxy`, with unsupported checkpoints reported as feasibility rather than guessed scores.
 
+## Security Artifact V3 Panels
+
+- `scripts/export_security_artifact_v3.py` builds frontend-ready security panels from existing result/showcase directories, security sidecars, the Amazon image manifest, and the model security capability matrix. It does not run training.
+- The V3 bundle is intended for the four frontend directions: recommendation manipulation, membership inference, update leakage, and aggregation defense. The default output is `outputs/showcase_artifacts/amazon_beauty_poc_security_v3/`.
+- V3 files are `scenario_profile.json`, `runtime_timeline.json`, `training_curves.json`, `target_manipulation_metrics.json`, `membership_inference_panel.json`, `update_leakage_panel.json`, `aggregation_defense_panel.json`, `privacy_defense_panel.json`, `model_support_panel.json`, and `frontend_summary.json`.
+- `target_manipulation_metrics.json` separates unmasked target-rank movement from masked TopK exposure. A target can move into unmasked Top50 while `attack_topk_hit=false`; do not present this as final exposure success.
+- `membership_inference_panel.json` must keep `evidence_type` honest. Rank or unmasked-rank evidence is proxy evidence and must not be labeled checkpoint score.
+- `update_leakage_panel.json` is candidate item reconstruction from update evidence, not full user-history recovery.
+- `aggregation_defense_panel.json` may be config-only. Config/validate-only defense cases must not be reported as benchmarked recovery.
+- `privacy_defense_panel.json` keeps DP-style noise, Opacus toy status, and secure aggregation demo boundaries separate.
+
 ## Model Security Capability Matrix
 
 - `scripts/build_model_security_capability_matrix.py` generates `outputs/model_security_capability_matrix/model_security_capability_matrix.json` with per-model, per-dataset support status for baseline training, TopK export, target-rank diagnostics, target interaction injection, MIA evidence, interaction reconstruction, update leakage risk, robust aggregation, DP-style noise, secure aggregation simulation, and checkpoint scoring.

@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--thumb-dir", default=str(DEFAULT_THUMB_DIR))
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
-    parser.add_argument("--limit", type=int, default=500)
+    parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--sleep", type=float, default=0.0)
     parser.add_argument("--thumb-size", type=int, default=224)
@@ -231,16 +231,46 @@ def priority_order(
     recommendation_counts: Counter[str],
     counts: Counter[str],
 ) -> List[str]:
-    def sort_key(item_id: str) -> Tuple[int, int, int, int, str]:
+    def sort_key(item_id: str) -> Tuple[int, int, int, int, int, int, str]:
+        item = metadata.get(item_id, {})
+        has_image = 0 if first_text(item, ["image_url", "image", "img_url"]) else 1
+        has_metadata = 0 if first_text(item, ["title", "item_title", "name"]) and category_text(item) else 1
         return (
             0 if item_id in target_ids else 1,
             0 if item_id in v25_recommendation_ids else 1,
             -recommendation_counts.get(item_id, 0),
             -counts.get(item_id, 0),
+            has_image,
+            has_metadata,
             item_id,
         )
 
     return sorted(metadata.keys(), key=sort_key)
+
+
+def source_priority_label(
+    item_id: str,
+    item: Dict[str, Any],
+    target_ids: set[str],
+    v25_recommendation_ids: set[str],
+    recommendation_counts: Counter[str],
+    counts: Counter[str],
+) -> str:
+    if item_id in target_ids:
+        return "target_items"
+    if item_id in v25_recommendation_ids:
+        return "v25_baseline_attack_defense_recommendations"
+    if recommendation_counts.get(item_id, 0) > 0:
+        return "showcase_recommendation_frequency"
+    if counts.get(item_id, 0) > 0:
+        return "high_interaction_items"
+    if (
+        first_text(item, ["title", "item_title", "name"])
+        and category_text(item)
+        and first_text(item, ["image_url", "image", "img_url"])
+    ):
+        return "metadata_complete_image_url"
+    return "metadata_available"
 
 
 def image_extension(url: str, content_type: Optional[str]) -> str:
@@ -374,6 +404,14 @@ def cache_images(
             if thumbnail_warning and not warning:
                 warning = thumbnail_warning
 
+        source_priority = source_priority_label(
+            item_id,
+            item,
+            target_ids,
+            v25_recommendation_ids,
+            recommendation_counts,
+            counts,
+        )
         entry: Dict[str, Any] = {
             "item_id": item_id,
             "itemID": item_id,
@@ -385,6 +423,7 @@ def cache_images(
             "thumbnail_path": repo_relative(thumbnail_path) if thumbnail_path else None,
             "status": status,
             "warning": warning,
+            "source_priority": source_priority,
             "priority": {
                 "target_item": item_id in target_ids,
                 "v25_recommendation_item": item_id in v25_recommendation_ids,
@@ -400,6 +439,8 @@ def cache_images(
 
     counts_by_status = Counter(entry["status"] for entry in entries)
     thumbnail_count = sum(1 for entry in entries if entry.get("thumbnail_path"))
+    cached_count = counts_by_status.get("downloaded", 0) + counts_by_status.get("exists", 0)
+    source_priority_counts = Counter(entry.get("source_priority", "unknown") for entry in entries)
     manifest = {
         "summary_type": "amazon_item_image_cache",
         "dataset": "AMAZON_BEAUTY_POC",
@@ -414,10 +455,12 @@ def cache_images(
         "selected_item_count": len(entries),
         "downloaded_count": counts_by_status.get("downloaded", 0),
         "existing_count": counts_by_status.get("exists", 0),
+        "cached_count": cached_count,
         "failed_count": counts_by_status.get("failed", 0),
         "skipped_count": counts_by_status.get("skipped_no_url", 0),
         "thumbnail_count": thumbnail_count,
         "thumbnail_available": thumbnail_available,
+        "source_priority": dict(source_priority_counts),
         "items": entries,
         "warnings": warnings,
         "note": (
@@ -454,6 +497,7 @@ def main() -> int:
         "selected_item_count": manifest["selected_item_count"],
         "downloaded_count": manifest["downloaded_count"],
         "existing_count": manifest["existing_count"],
+        "cached_count": manifest["cached_count"],
         "failed_count": manifest["failed_count"],
         "skipped_count": manifest["skipped_count"],
         "thumbnail_count": manifest["thumbnail_count"],
