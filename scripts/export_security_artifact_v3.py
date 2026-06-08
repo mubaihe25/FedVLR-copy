@@ -21,7 +21,7 @@ DEFAULT_MODEL_MATRIX = (
     ROOT
     / "outputs"
     / "model_security_capability_matrix"
-    / "model_security_capability_matrix.json"
+    / "model_security_capability_matrix_v2.json"
 )
 DEFAULT_SOURCE_DIRS = [
     ROOT / "outputs" / "showcase_artifacts" / "amazon_beauty_poc_v25_backend_smoke",
@@ -581,8 +581,19 @@ def build_privacy_defense_panel(opacus: Dict[str, Any], secure_agg: Dict[str, An
 
 def build_model_support_panel(matrix: Dict[str, Any]) -> Dict[str, Any]:
     entries = matrix.get("entries", []) if isinstance(matrix.get("entries"), list) else []
-    by_status: Dict[str, List[str]] = {"supported": [], "partial": [], "future_adapter": [], "unsupported": []}
+    by_status: Dict[str, List[str]] = {
+        "supported": [],
+        "partial": [],
+        "adapter_required": [],
+        "future_adapter": [],
+        "unsupported": [],
+        "not_tested": [],
+    }
     direction_support: Dict[str, Dict[str, str]] = {}
+    model_dataset_support: Dict[str, Dict[str, Any]] = dict(matrix.get("model_dataset_support") or {})
+    attack_defense_support_by_model: Dict[str, Dict[str, Any]] = dict(
+        matrix.get("attack_defense_support_by_model") or {}
+    )
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -591,17 +602,47 @@ def build_model_support_panel(matrix: Dict[str, Any]) -> Dict[str, Any]:
         if status in by_status and key not in by_status[status]:
             by_status[status].append(key)
         direction_support.setdefault(str(entry.get("capability")), {})[key] = status
+        if entry.get("capability") == "dataset_support":
+            model_dataset_support.setdefault(
+                key,
+                {
+                    "status": status,
+                    "reason": entry.get("reason"),
+                    "evidence_file": entry.get("evidence_file"),
+                },
+            )
+        if entry.get("capability") in {
+            "target_interaction_injection",
+            "robust_aggregation",
+            "dp_noise",
+            "secure_aggregation_sim",
+        }:
+            attack_defense_support_by_model.setdefault(key, {})[str(entry.get("capability"))] = {
+                "status": status,
+                "reason": entry.get("reason"),
+            }
     return {
         "summary_type": "security_artifact_v3_model_support_panel",
-        "supported_models": sorted(by_status["supported"]),
-        "partial_models": sorted(by_status["partial"]),
-        "adapter_required_models": sorted(by_status["future_adapter"]),
-        "unsupported_models": sorted(by_status["unsupported"]),
+        "supported_models": sorted(matrix.get("supported_models") or by_status["supported"]),
+        "partial_models": sorted(matrix.get("partial_models") or by_status["partial"]),
+        "adapter_required_models": sorted(
+            matrix.get("adapter_required_models")
+            or sorted(set(by_status["adapter_required"] + by_status["future_adapter"]))
+        ),
+        "unsupported_models": sorted(matrix.get("unsupported_models") or by_status["unsupported"]),
+        "not_tested_models": sorted(matrix.get("not_tested_models") or by_status["not_tested"]),
+        "overall_model_status": matrix.get("overall_model_status") or {},
+        "models_by_capability_status": matrix.get("models_by_capability_status") or {},
         "recommended_showcase_models": {
-            "multimodal_showcase": "MMFedRAP::KU",
-            "security_validation_base": "FedAvg::AMAZON_BEAUTY_POC",
+            **({
+                "multimodal_showcase": "MMFedRAP::KU",
+                "security_validation_base": "FedAvg::AMAZON_BEAUTY_POC",
+            }),
+            **(matrix.get("recommended_showcase_models") or {}),
         },
-        "model_direction_support": direction_support,
+        "model_direction_support": matrix.get("model_direction_support") or direction_support,
+        "model_dataset_support": model_dataset_support,
+        "attack_defense_support_by_model": attack_defense_support_by_model,
         "status_counts": matrix.get("status_counts"),
         "warnings": matrix.get("warnings", []),
     }

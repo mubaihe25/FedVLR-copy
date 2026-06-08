@@ -186,7 +186,7 @@ def validate_config(
         return errors, warnings
 
     status = str(model_record.get("compatibility_status", "unknown"))
-    if status == "blocked" and not allow_blocked_model:
+    if status in {"blocked", "adapter_required"} and not allow_blocked_model:
         errors.append("blocked_model:{}:{}".format(model_name, model_record.get("notes", "")))
 
     supported_datasets = model_record.get("supported_datasets", [])

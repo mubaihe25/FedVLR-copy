@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from privacy_eval.model_security_adapter import (  # noqa: E402
+    VALID_STATUSES,
+    describe_security_capability,
+    resolve_model_name,
+)
+
 CAPABILITY_PATH = ROOT / "configs" / "model_attack_defense_capabilities.json"
 
 DEFAULT_OUTPUT = (
@@ -26,6 +36,22 @@ TARGET_MODELS: List[Tuple[str, str]] = [
     ("MMFedAvg", "KU"),
 ]
 
+TARGET_MODELS_V2: List[Tuple[str, str]] = [
+    ("FedAvg", "AMAZON_BEAUTY_POC"),
+    ("FedAvg", "KU"),
+    ("FedRAP", "KU"),
+    ("FedNCF", "KU"),
+    ("FCF", "KU"),
+    ("MGCN", "KU"),
+    ("MMFedAvg", "KU"),
+    ("MMFedRAP", "KU"),
+    ("MMFedNCF", "KU"),
+    ("MMFCF", "KU"),
+    ("MMGCN", "KU"),
+    ("MMMGCN", "KU"),
+    ("MultiModalMGCN", "KU"),
+]
+
 CAPABILITIES = [
     "baseline_training",
     "topk_export",
@@ -39,6 +65,25 @@ CAPABILITIES = [
     "dp_noise",
     "secure_aggregation_sim",
     "checkpoint_scorer",
+]
+
+CAPABILITIES_V2 = [
+    "baseline_training",
+    "dataset_support",
+    "topk_export",
+    "participant_update_capture",
+    "item_embedding_access",
+    "score_user_item_pairs",
+    "target_rank_summary",
+    "target_interaction_injection",
+    "membership_inference_rank_proxy",
+    "membership_inference_checkpoint_score",
+    "update_leakage_probe",
+    "interaction_reconstruction_probe",
+    "robust_aggregation",
+    "dp_noise",
+    "secure_aggregation_sim",
+    "v3_artifact_export",
 ]
 
 KNOWN_ARTIFACTS = {
@@ -78,6 +123,12 @@ def parse_args() -> argparse.Namespace:
         "--output-json",
         default=str(DEFAULT_OUTPUT),
         help="Where to write model_security_capability_matrix.json.",
+    )
+    parser.add_argument(
+        "--matrix-version",
+        choices=["v1", "v2"],
+        default="v1",
+        help="v1 keeps the original matrix schema; v2 emits per-model security adapter capabilities.",
     )
     return parser.parse_args()
 
@@ -443,10 +494,185 @@ def build_matrix(capabilities: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def model_inventory(capabilities: Dict[str, Any]) -> List[Dict[str, Any]]:
+    records = model_records(capabilities)
+    inventory: List[Dict[str, Any]] = []
+    for model, _dataset in TARGET_MODELS_V2:
+        resolved = resolve_model_name(model)
+        canonical = resolved["canonical_model"]
+        record = records.get(canonical, {})
+        baseline = describe_security_capability(model, _dataset, "baseline_training", capabilities)
+        inventory.append(
+            {
+                "requested_model": model,
+                "canonical_model": canonical,
+                "is_alias": resolved["is_alias"],
+                "registered": bool(record),
+                "compatibility_status": record.get("compatibility_status"),
+                "security_status": record.get("security_status"),
+                "model_file": "models/{}.py".format(canonical.lower()),
+                "baseline_status": baseline["status"],
+                "baseline_reason": baseline["reason"],
+            }
+        )
+    return inventory
+
+
+def build_matrix_v2(capabilities: Dict[str, Any]) -> Dict[str, Any]:
+    entries: List[Dict[str, Any]] = []
+    for model, dataset in TARGET_MODELS_V2:
+        for capability in CAPABILITIES_V2:
+            result = describe_security_capability(model, dataset, capability, capabilities)
+            entries.append(
+                {
+                    "model": model,
+                    "canonical_model": result["canonical_model"],
+                    "dataset": dataset,
+                    "capability": capability,
+                    "status": result["status"],
+                    "reason": result["reason"],
+                    "evidence_file": result["evidence_file"],
+                }
+            )
+
+    status_counts = {status: 0 for status in sorted(VALID_STATUSES)}
+    for entry in entries:
+        status_counts[entry["status"]] = status_counts.get(entry["status"], 0) + 1
+
+    model_records_map: Dict[str, Dict[str, Any]] = {}
+    model_dataset_support: Dict[str, Dict[str, Any]] = {}
+    model_direction_support: Dict[str, Dict[str, str]] = {}
+    attack_defense_support_by_model: Dict[str, Dict[str, Any]] = {}
+    by_status: Dict[str, set[str]] = {
+        "supported": set(),
+        "partial": set(),
+        "adapter_required": set(),
+        "unsupported": set(),
+        "not_tested": set(),
+    }
+
+    for entry in entries:
+        model_key = "{}::{}".format(entry["model"], entry["dataset"])
+        model_records_map.setdefault(
+            model_key,
+            {
+                "model": entry["model"],
+                "canonical_model": entry["canonical_model"],
+                "dataset": entry["dataset"],
+                "capabilities": {},
+            },
+        )
+        model_records_map[model_key]["capabilities"][entry["capability"]] = {
+            "status": entry["status"],
+            "reason": entry["reason"],
+            "evidence_file": entry["evidence_file"],
+        }
+        by_status.setdefault(entry["status"], set()).add(model_key)
+        model_direction_support.setdefault(entry["capability"], {})[model_key] = entry["status"]
+
+        if entry["capability"] == "dataset_support":
+            model_dataset_support[model_key] = {
+                "status": entry["status"],
+                "reason": entry["reason"],
+                "evidence_file": entry["evidence_file"],
+            }
+        if entry["capability"] in {
+            "target_interaction_injection",
+            "robust_aggregation",
+            "dp_noise",
+            "secure_aggregation_sim",
+        }:
+            attack_defense_support_by_model.setdefault(model_key, {})[entry["capability"]] = {
+                "status": entry["status"],
+                "reason": entry["reason"],
+            }
+
+    models_by_capability_status = {status: sorted(values) for status, values in by_status.items()}
+    overall_model_status: Dict[str, Dict[str, Any]] = {}
+    for model_key, record in model_records_map.items():
+        caps = record["capabilities"]
+        core_statuses = [
+            caps.get("baseline_training", {}).get("status"),
+            caps.get("dataset_support", {}).get("status"),
+            caps.get("topk_export", {}).get("status"),
+            caps.get("participant_update_capture", {}).get("status"),
+        ]
+        if "unsupported" in core_statuses:
+            overall = "unsupported"
+            reason = "dataset or core launcher support is unsupported"
+        elif "adapter_required" in core_statuses:
+            overall = "adapter_required"
+            reason = "core model/trainer/update capture path needs an adapter"
+        elif "partial" in core_statuses:
+            overall = "partial"
+            reason = "core path exists but registry validation is partial/not_validated"
+        else:
+            overall = "supported"
+            reason = "baseline, dataset, TopK, and participant update capture paths are supported"
+        overall_model_status[model_key] = {
+            "status": overall,
+            "reason": reason,
+            "model": record["model"],
+            "canonical_model": record["canonical_model"],
+            "dataset": record["dataset"],
+        }
+
+    overall_groups: Dict[str, List[str]] = {
+        "supported": [],
+        "partial": [],
+        "adapter_required": [],
+        "unsupported": [],
+        "not_tested": [],
+    }
+    for model_key, payload in overall_model_status.items():
+        overall_groups.setdefault(payload["status"], []).append(model_key)
+    overall_groups = {key: sorted(value) for key, value in overall_groups.items()}
+
+    return {
+        "summary_type": "model_security_capability_matrix_v2",
+        "matrix_version": "v2",
+        "generated_at": utc_now(),
+        "scope": {
+            "repository": "FedVLR",
+            "no_api_or_frontend_change": True,
+            "ordinary_outputs_not_for_git": True,
+            "does_not_run_training": True,
+        },
+        "status_values": sorted(VALID_STATUSES),
+        "models": [{"model": model, "dataset": dataset} for model, dataset in TARGET_MODELS_V2],
+        "model_inventory": model_inventory(capabilities),
+        "capabilities": CAPABILITIES_V2,
+        "status_counts": status_counts,
+        "entries": entries,
+        "model_records": list(model_records_map.values()),
+        "overall_model_status": overall_model_status,
+        "models_by_capability_status": models_by_capability_status,
+        "supported_models": overall_groups["supported"],
+        "partial_models": overall_groups["partial"],
+        "adapter_required_models": overall_groups["adapter_required"],
+        "unsupported_models": overall_groups["unsupported"],
+        "not_tested_models": overall_groups["not_tested"],
+        "recommended_showcase_models": {
+            "security_validation_base": "FedAvg::AMAZON_BEAUTY_POC",
+            "multimodal_showcase": "MMFedRAP::KU",
+            "extension_targets": ["FedRAP::KU", "FedNCF::KU", "FCF::KU", "MMFedNCF::KU", "MMFCF::KU"],
+        },
+        "model_direction_support": model_direction_support,
+        "model_dataset_support": model_dataset_support,
+        "attack_defense_support_by_model": attack_defense_support_by_model,
+        "warnings": [
+            "FedAvg Amazon target-rank movement must not be generalized to other models.",
+            "adapter_required means the model exists only partially, lacks required trainer/dependencies, or needs a scorer/security hook adapter.",
+            "partial means the shared path exists but model-specific security evidence is not complete.",
+            "secure_aggregation_sim remains simulation/demo only.",
+        ],
+    }
+
+
 def main() -> int:
     args = parse_args()
     capabilities = load_json(Path(args.capabilities))
-    matrix = build_matrix(capabilities)
+    matrix = build_matrix_v2(capabilities) if args.matrix_version == "v2" else build_matrix(capabilities)
     output_path = Path(args.output_json)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -1,0 +1,30 @@
+{
+  "model": "MMFedAvg",
+  "dataset": "KU",
+  "scenario": "baseline",
+  "type": "MMFedAvgKUSecurityMatrixV2Smoke",
+  "comment": "mmfedavg_ku_security_smoke",
+  "enabled_attacks": [],
+  "enabled_defenses": [],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": false, "mode": "none", "ratio": 0.0, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.1,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.001,
+    "l2_reg": 0.00001
+  },
+  "attack_params": {},
+  "defense_params": {},
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "model_matrix_v2_case": "mmfedavg_ku_security"
+  }
+}

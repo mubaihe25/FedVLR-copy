@@ -1,0 +1,44 @@
+{
+  "model": "FedRAP",
+  "dataset": "KU",
+  "scenario": "attack_and_defense",
+  "type": "FedRAPKUSecurityMatrixV2Smoke",
+  "comment": "fedrap_ku_security_smoke",
+  "enabled_attacks": ["model_replacement"],
+  "enabled_defenses": ["robust_defense"],
+  "enabled_privacy_metrics": [],
+  "malicious_client_config": { "enabled": true, "mode": "ratio", "ratio": 0.2, "client_ids": [] },
+  "training_params": {
+    "epochs": 1,
+    "local_epochs": 1,
+    "clients_sample_ratio": 0.2,
+    "learner": "adam",
+    "use_gpu": false,
+    "eval_step": 1,
+    "collect_round_metrics": true,
+    "save_recommended_topk": true,
+    "lr": 0.1,
+    "l2_reg": 0.0000001,
+    "alpha": 0.1,
+    "beta": 0.1
+  },
+  "attack_params": {
+    "model_replacement": {
+      "model_replacement_scale": 5.0,
+      "model_replacement_preserve_direction": true
+    }
+  },
+  "defense_params": {
+    "robust_defense": {
+      "robust_defense_mode": "trimmed_mean",
+      "robust_trim_ratio": 0.2,
+      "robust_clip_norm": 5.0
+    }
+  },
+  "privacy_params": {},
+  "extra_config": {
+    "smoke_only": true,
+    "model_matrix_v2_case": "fedrap_ku_security",
+    "robust_aggregation_observation": true
+  }
+}
