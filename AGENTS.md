@@ -122,3 +122,11 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 - FedAvg on `AMAZON_BEAUTY_POC` is the strongest current attack/defense validation base; MMFedRAP on `KU` is the multimodal showcase model. Do not rewrite docs, configs, or artifacts to imply that FedRAP, FedNCF, FCF, MGCN, MMFedAvg, MMFedNCF, MMFCF, MMGCN, `MMMGCN`, or `MultiModalMGCN` has inherited FedAvg target-promotion success without matching evidence.
 - Treat FCF/MMFCF as `partial` until security effects are validated. Treat MGCN as `adapter_required` when no trainer exists. Treat MMGCN as `adapter_required` when `torch_geometric` is missing. Treat `MMMGCN` / `MultiModalMGCN` aliases as `adapter_required` unless a real implementation module exists.
 - New V2 model-matrix smoke configs belong under `configs/experiment_smoke/model_matrix_v2/`. Validate them with `.\.venv\Scripts\python.exe scripts\launch_experiment.py --config <config> --validate-only`; do not generate fake training configs for models that cannot import or lack a trainer.
+
+## Workbench Smoke Configs
+
+- `configs/workbench_experiment_schema.json` and `scripts/generate_workbench_smoke_config.py` support the frontend attack-defense workbench.
+- The generator is a bounded config/job artifact writer only. It must not start training, delete outputs, or mark a job as completed training.
+- Job artifacts are written under `outputs/workbench_jobs/{job_id}/` and should contain only relative pointers: `config.json`, `status.json`, `run.log`, `result_pointer.json`, and `metrics_summary.json`.
+- Keep the launchable model whitelist to FedAvg, FedRAP, FedNCF, FCF, MMFedAvg, MMFedRAP, MMFedNCF, and MMFCF unless new model-specific smoke evidence exists. Keep MGCN-family models as adapter-required until trainer/import support is validated.
+- Keep smoke bounds conservative: no more than 10 total rounds/epochs, no more than 5 local epochs, and client sampling ratio defaulting to 0.2. Do not turn the workbench path into a long training launcher without an explicit user request.

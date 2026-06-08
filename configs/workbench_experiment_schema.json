@@ -1,0 +1,100 @@
+{
+  "version": "2026-06-workbench-v1",
+  "description": "Bounded FedVLR workbench smoke schema for frontend orchestration. This schema validates demo/smoke jobs only and does not imply a full training run.",
+  "directions": [
+    {
+      "id": "recommendation_manipulation",
+      "label": "推荐操纵",
+      "default_dataset": "AMAZON_BEAUTY_POC",
+      "default_model": "FedAvg",
+      "default_scenario_id": "amazon_beauty_poc_security_v3"
+    },
+    {
+      "id": "membership_inference",
+      "label": "成员推断",
+      "default_dataset": "AMAZON_BEAUTY_POC",
+      "default_model": "FedAvg",
+      "default_scenario_id": "amazon_beauty_poc_security_v3"
+    },
+    {
+      "id": "update_leakage",
+      "label": "更新泄露",
+      "default_dataset": "AMAZON_BEAUTY_POC",
+      "default_model": "FedAvg",
+      "default_scenario_id": "amazon_beauty_poc_security_v3"
+    },
+    {
+      "id": "aggregation_defense",
+      "label": "聚合防御",
+      "default_dataset": "KU",
+      "default_model": "MMFedRAP",
+      "default_scenario_id": "security_matrix_krum_demo"
+    }
+  ],
+  "datasets": [
+    {
+      "id": "AMAZON_BEAUTY_POC",
+      "label": "Amazon Beauty",
+      "short_label": "Amazon Beauty",
+      "modalities": ["interaction", "text", "url_hash_image_placeholder"]
+    },
+    {
+      "id": "KU",
+      "label": "KU 多模态数据集",
+      "short_label": "KU",
+      "modalities": ["interaction", "text", "image"]
+    }
+  ],
+  "models": [
+    {"id": "FedAvg", "label": "FedAvg", "status": "smoke_supported", "datasets": ["AMAZON_BEAUTY_POC", "KU"]},
+    {"id": "FedRAP", "label": "FedRAP", "status": "smoke_supported", "datasets": ["KU"]},
+    {"id": "FedNCF", "label": "FedNCF", "status": "smoke_supported", "datasets": ["KU"]},
+    {"id": "FCF", "label": "FCF", "status": "partial", "datasets": ["KU"]},
+    {"id": "MMFedAvg", "label": "MMFedAvg", "status": "smoke_supported", "datasets": ["KU"]},
+    {"id": "MMFedRAP", "label": "MMFedRAP", "status": "smoke_supported", "datasets": ["KU"]},
+    {"id": "MMFedNCF", "label": "MMFedNCF", "status": "smoke_supported", "datasets": ["KU"]},
+    {"id": "MMFCF", "label": "MMFCF", "status": "partial", "datasets": ["KU"]}
+  ],
+  "adapter_required_models": [
+    {"id": "MGCN", "label": "MGCN", "reason": "model/trainer adapter required"},
+    {"id": "MMGCN", "label": "MMGCN", "reason": "model/trainer adapter required"},
+    {"id": "MMMGCN", "label": "MMMGCN", "reason": "alias requires implementation adapter"},
+    {"id": "MultiModalMGCN", "label": "MultiModalMGCN", "reason": "alias requires implementation adapter"}
+  ],
+  "aggregation_visibility_modes": [
+    {"id": "plain_updates", "label": "明文更新聚合", "allows_robust_aggregation": true},
+    {"id": "secure_aggregation", "label": "安全聚合模拟", "allows_robust_aggregation": false}
+  ],
+  "robust_aggregators": ["Krum", "Median", "TrimmedMean", "Bulyan"],
+  "bounds": {
+    "max_epochs": 10,
+    "default_epochs": 10,
+    "max_total_rounds": 10,
+    "default_total_rounds": 10,
+    "max_local_epochs": 5,
+    "default_local_epochs": 5,
+    "max_client_sampling_ratio_default": 0.2,
+    "max_client_sampling_ratio_explicit": 1.0,
+    "default_client_sampling_ratio": 0.2,
+    "min_malicious_client_ratio": 0.0,
+    "max_malicious_client_ratio": 0.6,
+    "default_malicious_client_ratio": 0.2,
+    "max_membership_sample_count": 5000,
+    "default_membership_sample_count": 200,
+    "candidate_k_values": [10, 20, 50]
+  },
+  "defaults": {
+    "learning_rate": 0.001,
+    "weight_decay": 0.0,
+    "gradient_clip": 5.0,
+    "trim_ratio": 0.2,
+    "krum_f": 1,
+    "bulyan_f": 1,
+    "dp_noise_std": 0.15,
+    "injection_ratio": 0.2,
+    "max_injections_per_client": 10,
+    "attack_strength": "strong",
+    "save_topk": true,
+    "export_artifact": true
+  }
+}

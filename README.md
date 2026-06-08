@@ -224,3 +224,12 @@ Useful V2 smoke commands:
 - MMFedRAP on `KU` remains the main multimodal showcase model. Treat FedAvg as the security validation base and MMFedRAP as the multimodal recommendation showcase unless a model-specific security smoke result says otherwise.
 - FedRAP, FedNCF, FCF, MGCN, MMFedAvg, MMFedNCF, MMFCF, MMGCN, and aliases such as `MMMGCN` / `MultiModalMGCN` are extension targets. A real model file alone is not enough for `supported`; require a compatible trainer, launcher validation, and capability-specific evidence. Current matrix conventions are: FCF/MMFCF are `partial` until security effects are validated; MGCN is `adapter_required` without a trainer; MMGCN is `adapter_required` when `torch_geometric` is unavailable; aliases without an implementation module remain `adapter_required`.
 - New V2 model-matrix smoke configs belong under `configs/experiment_smoke/model_matrix_v2/` and should be validated with `.\.venv\Scripts\python.exe scripts\launch_experiment.py --config <config> --validate-only`. Do not create fake training configs for models that cannot import or lack a trainer.
+
+## Workbench Smoke Config Generator
+
+- `configs/workbench_experiment_schema.json` defines the bounded frontend workbench options for four directions: recommendation manipulation, membership inference, update leakage, and aggregation defense.
+- `scripts/generate_workbench_smoke_config.py` validates a workbench payload and can write `outputs/workbench_jobs/{job_id}/config.json`, `status.json`, `run.log`, `result_pointer.json`, and `metrics_summary.json`.
+- This path does not start training. It records a disabled/pending job artifact so the API/frontend can present a real validation flow without pretending a production task runner is connected.
+- Launchable model choices are limited to FedAvg, FedRAP, FedNCF, FCF, MMFedAvg, MMFedRAP, MMFedNCF, and MMFCF. FCF/MMFCF remain partial. MGCN, MMGCN, MMMGCN, and MultiModalMGCN are adapter-required and are not launchable from the workbench.
+- The schema deduplicates dataset choices to `AMAZON_BEAUTY_POC` and `KU`. Amazon target item choices are read from `datasets/AMAZON_BEAUTY_POC/item_metadata.json` and `outputs/security_sidecars/AMAZON_BEAUTY_POC/target_items.json`.
+- Bounded defaults keep smoke configs small: total rounds and epochs are capped at 10, local epochs at 5, and client sampling ratio defaults to 0.2 unless a caller explicitly asks for a larger validation-only ratio.
