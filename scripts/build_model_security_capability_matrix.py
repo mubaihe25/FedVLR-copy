@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +28,8 @@ DEFAULT_OUTPUT = (
     / "model_security_capability_matrix"
     / "model_security_capability_matrix.json"
 )
+MODEL_MATRIX_V2_CONFIG_DIR = ROOT / "configs" / "experiment_smoke" / "model_matrix_v2"
+SMOKE_STATUS_VALUES = ["passed", "failed", "not_run", "adapter_required"]
 
 TARGET_MODELS: List[Tuple[str, str]] = [
     ("FedAvg", "AMAZON_BEAUTY_POC"),
@@ -155,6 +159,180 @@ def first_existing(paths: Iterable[Path]) -> Optional[Path]:
         if path.exists():
             return path
     return None
+
+
+def newest(paths: Iterable[Path]) -> Optional[Path]:
+    candidates = [path for path in paths if path.exists()]
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True)[0]
+
+
+def has_nonfinite_scalar(value: Any) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return not math.isfinite(float(value))
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"nan", "+nan", "-nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}:
+            return True
+    return False
+
+
+def has_nonfinite_json_value(value: Any) -> bool:
+    if has_nonfinite_scalar(value):
+        return True
+    if isinstance(value, dict):
+        return any(has_nonfinite_json_value(item) for item in value.values())
+    if isinstance(value, list):
+        return any(has_nonfinite_json_value(item) for item in value)
+    return False
+
+
+def json_is_readable_and_finite(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return False
+    return not has_nonfinite_json_value(payload)
+
+
+def csv_is_readable_and_finite(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                for value in row.values():
+                    if has_nonfinite_scalar(value):
+                        return False
+    except Exception:
+        return False
+    return True
+
+
+def topk_manifest_verified(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return False
+    file_count = payload.get("file_count")
+    topk_files = payload.get("topk_files")
+    if isinstance(file_count, int) and file_count > 0:
+        return True
+    if isinstance(topk_files, list) and topk_files:
+        return True
+    return bool(list(path.parent.glob("*.csv")))
+
+
+def load_model_matrix_v2_smoke_configs() -> Dict[str, Dict[str, Any]]:
+    configs: Dict[str, Dict[str, Any]] = {}
+    if not MODEL_MATRIX_V2_CONFIG_DIR.exists():
+        return configs
+    for path in sorted(MODEL_MATRIX_V2_CONFIG_DIR.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        model = str(payload.get("model", "")).strip()
+        dataset = str(payload.get("dataset", "")).strip()
+        run_type = str(payload.get("type", "")).strip()
+        comment = str(payload.get("comment", "")).strip()
+        if not model or not dataset or not run_type or not comment:
+            continue
+        key = "{}::{}".format(model, dataset)
+        configs[key] = {
+            "config_path": path,
+            "model": model,
+            "dataset": dataset,
+            "type": run_type,
+            "comment": comment,
+        }
+    return configs
+
+
+def inspect_model_matrix_v2_smoke(config: Dict[str, Any], default_status: str) -> Dict[str, Any]:
+    if default_status == "adapter_required":
+        return {
+            "smoke_status": "adapter_required",
+            "smoke_result_dir": None,
+            "topk_export_verified": False,
+            "metrics_export_verified": False,
+            "security_artifact_ready": False,
+            "failure_reason": "core model status is adapter_required",
+        }
+
+    result_dir = ROOT / "outputs" / "results" / config["model"] / config["dataset"] / config["type"]
+    prefix = "[{}]-[{}]-[{}.{}]-[".format(
+        config["model"],
+        config["dataset"],
+        config["type"],
+        config["comment"],
+    )
+    csv_path = newest(path for path in result_dir.glob("*.csv") if path.name.startswith(prefix)) if result_dir.exists() else None
+    if csv_path is None:
+        return {
+            "smoke_status": "not_run",
+            "smoke_result_dir": rel(result_dir),
+            "smoke_config_path": rel(config["config_path"]),
+            "topk_export_verified": False,
+            "metrics_export_verified": False,
+            "security_artifact_ready": False,
+            "failure_reason": None,
+        }
+
+    base_name = csv_path.stem
+    summary_path = csv_path.with_name("{}.experiment_summary.json".format(base_name))
+    result_path = csv_path.with_name("{}.experiment_result.json".format(base_name))
+    topk_dir = result_dir / "recommend_topk" / base_name
+    topk_manifest = topk_dir / "recommend_topk_manifest.json"
+    metrics_ok = (
+        csv_is_readable_and_finite(csv_path)
+        and json_is_readable_and_finite(summary_path)
+        and json_is_readable_and_finite(result_path)
+    )
+    topk_ok = topk_manifest_verified(topk_manifest)
+    if metrics_ok and topk_ok:
+        smoke_status = "passed"
+        failure_reason = None
+    else:
+        smoke_status = "failed"
+        missing: List[str] = []
+        if not metrics_ok:
+            missing.append("metrics_csv_or_experiment_json_missing_unreadable_or_nonfinite")
+        if not topk_ok:
+            missing.append("topk_manifest_missing_or_empty")
+        failure_reason = ";".join(missing)
+    return {
+        "smoke_status": smoke_status,
+        "smoke_result_dir": rel(result_dir),
+        "smoke_config_path": rel(config["config_path"]),
+        "smoke_csv_path": rel(csv_path),
+        "smoke_summary_path": rel(summary_path) if summary_path.exists() else None,
+        "smoke_result_path": rel(result_path) if result_path.exists() else None,
+        "recommend_topk_dir": rel(topk_dir) if topk_dir.exists() else None,
+        "topk_manifest_path": rel(topk_manifest) if topk_manifest.exists() else None,
+        "topk_export_verified": topk_ok,
+        "metrics_export_verified": metrics_ok,
+        "security_artifact_ready": bool(metrics_ok and topk_ok),
+        "failure_reason": failure_reason,
+    }
+
+
+def verification_level_for(overall_status: str, smoke_status: str) -> str:
+    if smoke_status == "passed":
+        return "partial_smoke_verified" if overall_status == "partial" else "smoke_verified"
+    if smoke_status == "failed":
+        return "failed_smoke"
+    if smoke_status == "adapter_required" or overall_status == "adapter_required":
+        return "adapter_required"
+    return "partial_validate" if overall_status == "partial" else "validate_only"
 
 
 def model_records(capabilities: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -628,6 +806,49 @@ def build_matrix_v2(capabilities: Dict[str, Any]) -> Dict[str, Any]:
         overall_groups.setdefault(payload["status"], []).append(model_key)
     overall_groups = {key: sorted(value) for key, value in overall_groups.items()}
 
+    smoke_configs = load_model_matrix_v2_smoke_configs()
+    model_smoke_evidence: Dict[str, Dict[str, Any]] = {}
+    smoke_verified_models: List[str] = []
+    partial_smoke_verified_models: List[str] = []
+    validate_only_models: List[str] = []
+    failed_smoke_models: List[str] = []
+    for model_key, payload in overall_model_status.items():
+        config = smoke_configs.get(model_key)
+        if config:
+            smoke = inspect_model_matrix_v2_smoke(config, payload["status"])
+        elif payload["status"] == "adapter_required":
+            smoke = {
+                "smoke_status": "adapter_required",
+                "smoke_result_dir": None,
+                "topk_export_verified": False,
+                "metrics_export_verified": False,
+                "security_artifact_ready": False,
+                "failure_reason": "no runnable smoke config because model requires an adapter",
+            }
+        else:
+            smoke = {
+                "smoke_status": "not_run",
+                "smoke_result_dir": None,
+                "topk_export_verified": False,
+                "metrics_export_verified": False,
+                "security_artifact_ready": False,
+                "failure_reason": None,
+            }
+        smoke["verification_level"] = verification_level_for(payload["status"], smoke["smoke_status"])
+        payload.update(smoke)
+        if model_key in model_records_map:
+            model_records_map[model_key].update(smoke)
+        model_smoke_evidence[model_key] = smoke
+
+        if smoke["smoke_status"] == "passed":
+            smoke_verified_models.append(model_key)
+            if payload["status"] == "partial":
+                partial_smoke_verified_models.append(model_key)
+        elif smoke["smoke_status"] == "failed":
+            failed_smoke_models.append(model_key)
+        elif smoke["smoke_status"] == "not_run" and payload["status"] != "adapter_required":
+            validate_only_models.append(model_key)
+
     return {
         "summary_type": "model_security_capability_matrix_v2",
         "matrix_version": "v2",
@@ -642,10 +863,16 @@ def build_matrix_v2(capabilities: Dict[str, Any]) -> Dict[str, Any]:
         "models": [{"model": model, "dataset": dataset} for model, dataset in TARGET_MODELS_V2],
         "model_inventory": model_inventory(capabilities),
         "capabilities": CAPABILITIES_V2,
+        "smoke_status_values": SMOKE_STATUS_VALUES,
         "status_counts": status_counts,
         "entries": entries,
         "model_records": list(model_records_map.values()),
         "overall_model_status": overall_model_status,
+        "model_smoke_evidence": model_smoke_evidence,
+        "smoke_verified_models": sorted(smoke_verified_models),
+        "partial_smoke_verified_models": sorted(partial_smoke_verified_models),
+        "validate_only_models": sorted(validate_only_models),
+        "failed_smoke_models": sorted(failed_smoke_models),
         "models_by_capability_status": models_by_capability_status,
         "supported_models": overall_groups["supported"],
         "partial_models": overall_groups["partial"],

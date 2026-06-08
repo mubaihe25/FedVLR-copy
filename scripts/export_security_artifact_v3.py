@@ -631,6 +631,11 @@ def build_model_support_panel(matrix: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "unsupported_models": sorted(matrix.get("unsupported_models") or by_status["unsupported"]),
         "not_tested_models": sorted(matrix.get("not_tested_models") or by_status["not_tested"]),
+        "smoke_verified_models": sorted(matrix.get("smoke_verified_models") or []),
+        "partial_smoke_verified_models": sorted(matrix.get("partial_smoke_verified_models") or []),
+        "validate_only_models": sorted(matrix.get("validate_only_models") or []),
+        "failed_smoke_models": sorted(matrix.get("failed_smoke_models") or []),
+        "model_smoke_evidence": matrix.get("model_smoke_evidence") or {},
         "overall_model_status": matrix.get("overall_model_status") or {},
         "models_by_capability_status": matrix.get("models_by_capability_status") or {},
         "recommended_showcase_models": {

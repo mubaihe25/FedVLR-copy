@@ -11,7 +11,7 @@
   "training_params": {
     "epochs": 1,
     "local_epochs": 1,
-    "clients_sample_ratio": 0.1,
+    "clients_sample_ratio": 0.05,
     "learner": "adam",
     "use_gpu": false,
     "eval_step": 1,
