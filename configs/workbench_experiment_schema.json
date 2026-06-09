@@ -66,6 +66,80 @@
     {"id": "secure_aggregation", "label": "安全聚合模拟", "allows_robust_aggregation": false}
   ],
   "robust_aggregators": ["Krum", "Median", "TrimmedMean", "Bulyan"],
+  "direction_parameters": {
+    "recommendation_manipulation": [
+      "dataset",
+      "model",
+      "target_item",
+      "epochs",
+      "local_epochs",
+      "client_sampling_ratio",
+      "malicious_client_ratio",
+      "injection_ratio",
+      "max_injections_per_client",
+      "attack_strength",
+      "learning_rate",
+      "weight_decay",
+      "batch_size",
+      "save_topk",
+      "export_audit"
+    ],
+    "membership_inference": [
+      "dataset",
+      "model",
+      "evidence_source",
+      "label_source",
+      "sample_count",
+      "threshold_strategy",
+      "learning_rate",
+      "weight_decay",
+      "export_pair_scores",
+      "export_audit"
+    ],
+    "update_leakage": [
+      "dataset",
+      "model",
+      "candidate_count",
+      "hit_k",
+      "risk_modality",
+      "client_count",
+      "learning_rate",
+      "weight_decay",
+      "export_reconstruction",
+      "export_audit"
+    ],
+    "aggregation_defense": [
+      "dataset",
+      "model",
+      "base_attack",
+      "epochs",
+      "local_epochs",
+      "client_sampling_ratio",
+      "malicious_client_ratio",
+      "learning_rate",
+      "weight_decay",
+      "gradient_clip_norm",
+      "robust_aggregators",
+      "krum_f",
+      "median_clip_norm",
+      "trimmed_mean_ratio",
+      "bulyan_f",
+      "dp_style_noise_enabled",
+      "dp_noise_sigma",
+      "secure_aggregation_enabled"
+    ]
+  },
+  "defense_parameters": {
+    "Krum": ["krum_f", "distance_metric"],
+    "Median": ["median_clip_norm"],
+    "TrimmedMean": ["trimmed_mean_ratio"],
+    "Bulyan": ["bulyan_f", "bulyan_selection_ratio"],
+    "dp_style_noise": ["dp_noise_sigma", "gradient_clip_norm"]
+  },
+  "compatibility_matrix": {
+    "AMAZON_BEAUTY_POC": ["FedAvg"],
+    "KU": ["FedAvg", "FedRAP", "FedNCF", "FCF", "MMFedAvg", "MMFedRAP", "MMFedNCF", "MMFCF"]
+  },
   "bounds": {
     "max_epochs": 10,
     "default_epochs": 10,
@@ -81,7 +155,9 @@
     "default_malicious_client_ratio": 0.2,
     "max_membership_sample_count": 5000,
     "default_membership_sample_count": 200,
-    "candidate_k_values": [10, 20, 50]
+    "candidate_k_values": [10, 20, 50],
+    "batch_size_values": [64, 128, 256, 512],
+    "default_batch_size": 128
   },
   "defaults": {
     "learning_rate": 0.001,
@@ -91,6 +167,15 @@
     "krum_f": 1,
     "bulyan_f": 1,
     "dp_noise_std": 0.15,
+    "batch_size": 128,
+    "median_clip_norm": 5.0,
+    "distance_metric": "euclidean",
+    "bulyan_selection_ratio": 0.5,
+    "base_attack": "random_poisoning",
+    "threshold_strategy": "auto",
+    "label_source": "membership_labels",
+    "export_pair_scores": true,
+    "export_reconstruction": true,
     "injection_ratio": 0.2,
     "max_injections_per_client": 10,
     "attack_strength": "strong",

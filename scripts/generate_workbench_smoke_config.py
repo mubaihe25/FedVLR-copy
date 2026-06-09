@@ -13,6 +13,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "configs" / "workbench_experiment_schema.json"
 DEFAULT_OUTPUT_ROOT = ROOT / "outputs" / "workbench_jobs"
 AMAZON_DATASET = "AMAZON_BEAUTY_POC"
+CANONICAL_DATASET_IDS = {"AMAZON_BEAUTY_POC", "KU"}
+LAUNCHABLE_MODEL_IDS = {"FedAvg", "FedRAP", "FedNCF", "FCF", "MMFedAvg", "MMFedRAP", "MMFedNCF", "MMFCF"}
+TARGET_ZH_RULES = [
+    ("Empty Amber Glass Spray Bottles", "琥珀玻璃喷雾瓶套装", "琥珀喷雾瓶"),
+    ("Bouquet Garni Body Shower White Musk", "白麝香香氛沐浴露", "白麝香沐浴露"),
+    ("Bioré J-Beauty Makeup Removing Moisturizing Cleansing Jelly", "Bioré 卸妆保湿洁面啫喱", "Bioré 卸妆啫喱"),
+    ("Bioré Makeup Removing Cleansing Jelly", "Bioré 卸妆保湿洁面啫喱", "Bioré 卸妆啫喱"),
+    ("Vitamin C", "维C亮肤精华液", "维C精华"),
+    ("Gel Nail Polish Set", "闪粉凝胶甲油套装", "凝胶甲油套装"),
+]
+CATEGORY_ZH = {
+    "All Beauty": "美妆护理",
+    "Beauty": "美妆护理",
+}
 
 DIRECTION_ALIASES = {
     "target_poisoning_play": "recommendation_manipulation",
@@ -119,6 +133,24 @@ def as_list(value: Any) -> List[str]:
     return []
 
 
+def target_zh_names(title: str) -> Tuple[str, str]:
+    for needle, display_name, short_name in TARGET_ZH_RULES:
+        if needle.lower() in title.lower():
+            return display_name, short_name
+    compact = title.strip()
+    if len(compact) > 18:
+        compact = compact[:18].rstrip() + "…"
+    return compact or "目标商品", compact or "目标商品"
+
+
+def canonical_datasets(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [item for item in data.get("datasets", []) if item.get("id") in CANONICAL_DATASET_IDS]
+
+
+def launchable_models(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [item for item in data.get("models", []) if item.get("id") in LAUNCHABLE_MODEL_IDS]
+
+
 def clamp_number(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 
@@ -161,15 +193,22 @@ def get_target_item_options(limit: int = 60) -> List[Dict[str, Any]]:
         meta = by_id.get(item_id, {})
         image = image_by_id.get(item_id, {})
         title = str(meta.get("title") or image.get("title") or f"item {item_id}")
+        display_name_zh, short_name_zh = target_zh_names(title)
+        category = meta.get("main_category") or image.get("category")
         short_title = title if len(title) <= 72 else f"{title[:69]}..."
         options.append(
             {
                 "item_id": item_id,
                 "raw_item_id": meta.get("raw_item_id") or image.get("raw_item_id"),
+                "raw_title": title,
                 "title": title,
                 "short_title": short_title,
-                "category": meta.get("main_category") or image.get("category"),
+                "display_name_zh": display_name_zh,
+                "short_name_zh": short_name_zh,
+                "category": category,
+                "category_zh": CATEGORY_ZH.get(str(category), str(category or "美妆护理")),
                 "image_url": meta.get("image_url") or image.get("image_url"),
+                "thumbnail_url": f"/showcase/images/{AMAZON_DATASET}/{item_id}?size=thumb" if image.get("thumbnail_path") else None,
                 "is_target_sidecar": item_id in set(str(x) for x in (sidecar.get("target_items", []) if isinstance(sidecar, dict) else [])),
             }
         )
@@ -181,11 +220,14 @@ def get_workbench_options() -> Dict[str, Any]:
     return {
         "schema_version": data.get("version"),
         "directions": data.get("directions", []),
-        "datasets": data.get("datasets", []),
-        "models": data.get("models", []),
+        "datasets": canonical_datasets(data),
+        "models": launchable_models(data),
         "adapter_required_models": data.get("adapter_required_models", []),
         "aggregation_visibility_modes": data.get("aggregation_visibility_modes", []),
         "robust_aggregators": data.get("robust_aggregators", []),
+        "direction_parameters": data.get("direction_parameters", {}),
+        "defense_parameters": data.get("defense_parameters", {}),
+        "compatibility_matrix": data.get("compatibility_matrix", {}),
         "bounds": data.get("bounds", {}),
         "defaults": data.get("defaults", {}),
         "target_items": get_target_item_options(),
@@ -214,20 +256,27 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     direction = normalize_direction(payload.get("direction") or payload.get("play_id") or payload.get("playId"))
     direction_record = next((item for item in data.get("directions", []) if item.get("id") == direction), {})
 
-    models = {item.get("id"): item for item in data.get("models", [])}
+    models = {item.get("id"): item for item in launchable_models(data)}
     adapter_models = {item.get("id"): item for item in data.get("adapter_required_models", [])}
-    datasets = {item.get("id"): item for item in data.get("datasets", [])}
+    datasets = {item.get("id"): item for item in canonical_datasets(data)}
+    compatibility = data.get("compatibility_matrix", {})
+    field_errors: Dict[str, List[str]] = {}
+
+    def add_error(field: str, code: str) -> None:
+        errors.append(code)
+        field_errors.setdefault(field, []).append(code)
 
     model = str(payload.get("model") or direction_record.get("default_model") or "FedAvg")
     dataset = str(payload.get("dataset") or direction_record.get("default_dataset") or "AMAZON_BEAUTY_POC")
     if model in adapter_models:
-        errors.append(f"adapter_required_model:{model}")
+        add_error("model", f"adapter_required_model:{model}")
     if model not in models:
-        errors.append(f"unknown_model:{model}")
+        add_error("model", f"unknown_model:{model}")
     if dataset not in datasets:
-        errors.append(f"unknown_dataset:{dataset}")
-    if model in models and dataset not in models[model].get("datasets", []):
-        warnings.append(f"dataset_not_smoke_verified_for_model:{model}:{dataset}")
+        add_error("dataset", f"unknown_dataset:{dataset}")
+    allowed_for_dataset = set(compatibility.get(dataset, models.get(model, {}).get("datasets", [])))
+    if model in models and dataset in datasets and model not in allowed_for_dataset:
+        add_error("model", f"model_dataset_incompatible:{model}:{dataset}")
 
     total_rounds = as_int(payload.get("total_rounds", payload.get("totalRounds")), bounds.get("default_total_rounds", 10))
     total_rounds = int(clamp_number(total_rounds, 1, bounds.get("max_total_rounds", 10)))
@@ -257,11 +306,21 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     allowed_robust = set(data.get("robust_aggregators", []))
     for item in robust_aggregators:
         if item not in allowed_robust:
-            errors.append(f"unknown_robust_aggregator:{item}")
+            add_error("robust_aggregators", f"unknown_robust_aggregator:{item}")
     if aggregation_mode == "secure_aggregation" and robust_aggregators:
-        errors.append("secure_aggregation_conflicts_with_robust_aggregation")
+        add_error("secure_aggregation_enabled", "secure_aggregation_conflicts_with_robust_aggregation")
+        add_error("robust_aggregators", "secure_aggregation_conflicts_with_robust_aggregation")
 
     dp_noise_enabled = as_bool(payload.get("dp_noise_enabled", payload.get("dpNoiseEnabled")), False)
+    trim_ratio = as_float(payload.get("trim_ratio", payload.get("trimRatio")), defaults.get("trim_ratio", 0.2))
+    krum_f = as_int(payload.get("krum_f", payload.get("krumF")), defaults.get("krum_f", 1))
+    bulyan_f = as_int(payload.get("bulyan_f", payload.get("bulyanF")), defaults.get("bulyan_f", 1))
+    if "TrimmedMean" in robust_aggregators and not (0 < trim_ratio < 0.5):
+        add_error("trimmed_mean_ratio", "trimmed_mean_ratio_must_be_between_0_and_0_5")
+    if "Krum" in robust_aggregators and krum_f < 1:
+        add_error("krum_f", "krum_f_must_be_positive")
+    if "Bulyan" in robust_aggregators and bulyan_f < 1:
+        add_error("bulyan_f", "bulyan_f_must_be_positive")
     target_item_id = str(payload.get("target_item_id", payload.get("targetItemId")) or "0")
     target_title = payload.get("target_item_title", payload.get("targetItemTitle"))
     target_options = get_target_item_options()
@@ -313,6 +372,7 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
             "learning_rate": as_float(payload.get("learning_rate", payload.get("learningRate")), defaults.get("learning_rate", 0.001)),
             "weight_decay": as_float(payload.get("weight_decay", payload.get("weightDecay")), defaults.get("weight_decay", 0.0)),
             "gradient_clip": as_float(payload.get("gradient_clip", payload.get("gradientClip")), defaults.get("gradient_clip", 5.0)),
+            "batch_size": as_int(payload.get("batch_size", payload.get("batchSize")), defaults.get("batch_size", 128)),
             "save_topk": as_bool(payload.get("save_topk", payload.get("saveTopK")), defaults.get("save_topk", True)),
             "export_artifact": as_bool(payload.get("export_artifact", payload.get("exportArtifact")), defaults.get("export_artifact", True)),
         },
@@ -326,6 +386,9 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
         },
         "privacy": {
             "mia_evidence_source": str(payload.get("mia_evidence_source", payload.get("evidenceSource")) or "auto"),
+            "label_source": str(payload.get("label_source", payload.get("labelSource")) or defaults.get("label_source", "membership_labels")),
+            "threshold_strategy": str(payload.get("threshold_strategy", payload.get("thresholdStrategy")) or defaults.get("threshold_strategy", "auto")),
+            "export_pair_scores": as_bool(payload.get("export_pair_scores", payload.get("exportPairScores")), defaults.get("export_pair_scores", True)),
             "membership_sample_count": int(
                 clamp_number(
                     as_int(payload.get("membership_sample_count", payload.get("membershipSampleCount")), bounds.get("default_membership_sample_count", 200)),
@@ -334,14 +397,23 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 )
             ),
             "candidate_k": candidate_k,
+            "hit_k": as_int(payload.get("hit_k", payload.get("hitK")), candidate_k),
+            "client_count": as_int(payload.get("client_count", payload.get("clientCount")), 100),
+            "export_reconstruction": as_bool(payload.get("export_reconstruction", payload.get("exportReconstruction")), defaults.get("export_reconstruction", True)),
             "risk_modality": str(payload.get("risk_modality", payload.get("riskModality")) or "item embedding"),
         },
         "defense": {
-            "trim_ratio": as_float(payload.get("trim_ratio", payload.get("trimRatio")), defaults.get("trim_ratio", 0.2)),
-            "krum_f": as_int(payload.get("krum_f", payload.get("krumF")), defaults.get("krum_f", 1)),
-            "bulyan_f": as_int(payload.get("bulyan_f", payload.get("bulyanF")), defaults.get("bulyan_f", 1)),
+            "base_attack": str(payload.get("base_attack", payload.get("baseAttack")) or defaults.get("base_attack", "random_poisoning")),
+            "gradient_clip_norm": as_float(payload.get("gradient_clip_norm", payload.get("gradientClipNorm")), defaults.get("gradient_clip", 5.0)),
+            "trim_ratio": trim_ratio,
+            "krum_f": krum_f,
+            "median_clip_norm": as_float(payload.get("median_clip_norm", payload.get("medianClipNorm")), defaults.get("median_clip_norm", 5.0)),
+            "distance_metric": str(payload.get("distance_metric", payload.get("distanceMetric")) or defaults.get("distance_metric", "euclidean")),
+            "bulyan_f": bulyan_f,
+            "bulyan_selection_ratio": as_float(payload.get("bulyan_selection_ratio", payload.get("bulyanSelectionRatio")), defaults.get("bulyan_selection_ratio", 0.5)),
             "dp_noise_std": as_float(payload.get("dp_noise_std", payload.get("dpNoiseStd")), defaults.get("dp_noise_std", 0.15)),
         },
+        "field_errors": field_errors,
         "unified_experiment_config": {
             "model": model,
             "dataset": dataset,
@@ -424,11 +496,13 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
 
 def validation_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     normalized, warnings, errors = normalize_workbench_payload(payload)
+    field_errors = normalized.get("field_errors", {}) if isinstance(normalized.get("field_errors"), dict) else {}
     return {
         "valid": not errors,
         "status": "validated" if not errors else "invalid",
         "warnings": warnings,
         "errors": errors,
+        "field_errors": field_errors,
         "normalized_config": normalized,
         "expected_outputs": [
             "config.json",
