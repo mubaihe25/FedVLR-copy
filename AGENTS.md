@@ -127,6 +127,9 @@ python -m compileall -q scripts utils models common attacks defenses privacy_eva
 
 - `configs/workbench_experiment_schema.json` and `scripts/generate_workbench_smoke_config.py` support the frontend attack-defense workbench.
 - The generator is a bounded config/job artifact writer only. It must not start training, delete outputs, or mark a job as completed training.
-- Job artifacts are written under `outputs/workbench_jobs/{job_id}/` and should contain only relative pointers: `config.json`, `status.json`, `run.log`, `result_pointer.json`, and `metrics_summary.json`.
+- `scripts/run_workbench_smoke_job.py` is the whitelisted bounded runner used by FedVLR-API. It may update a job through `queued` / `preparing_config` / `running` / `exporting_artifacts` / `completed` / `partial` / `failed`, but it must not run arbitrary commands, delete outputs, or start long training.
+- Job artifacts are written under `outputs/workbench_jobs/{job_id}/` and should contain only relative pointers: `config.json`, `launcher_config.json`, `status.json`, `run.log`, `result_pointer.json`, and `metrics_summary.json`.
+- `aggregation_defense` on `KU` with `FedAvg` or `FedRAP` may use the white-listed `scripts/launch_experiment.py` path as `source=real_smoke`; keep it capped to 1 epoch / 1 local epoch / 0.05 client sampling and describe it only as small smoke validation.
+- If a job reuses existing V3 evidence, keep `source=existing_artifact`; do not present it as newly trained output. If aggregation defense is config-only, use `partial` and keep the benchmark boundary visible.
 - Keep the launchable model whitelist to FedAvg, FedRAP, FedNCF, FCF, MMFedAvg, MMFedRAP, MMFedNCF, and MMFCF unless new model-specific smoke evidence exists. Keep MGCN-family models as adapter-required until trainer/import support is validated.
-- Keep smoke bounds conservative: no more than 10 total rounds/epochs, no more than 5 local epochs, and client sampling ratio defaulting to 0.2. Do not turn the workbench path into a long training launcher without an explicit user request.
+- Generator validation bounds can be wider, but runtime smoke bounds must remain stricter: local epochs capped at 1, epochs/rounds capped to 1-2 by default, and client sampling capped to a small smoke ratio unless an explicit bounded override is validated.

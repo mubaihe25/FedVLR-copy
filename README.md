@@ -229,7 +229,10 @@ Useful V2 smoke commands:
 
 - `configs/workbench_experiment_schema.json` defines the bounded frontend workbench options for four directions: recommendation manipulation, membership inference, update leakage, and aggregation defense.
 - `scripts/generate_workbench_smoke_config.py` validates a workbench payload and can write `outputs/workbench_jobs/{job_id}/config.json`, `status.json`, `run.log`, `result_pointer.json`, and `metrics_summary.json`.
-- This path does not start training. It records a disabled/pending job artifact so the API/frontend can present a real validation flow without pretending a production task runner is connected.
+- `scripts/run_workbench_smoke_job.py` is the only bounded workbench runner used by the API. It writes `config.json`, `launcher_config.json`, `status.json`, `run.log`, `result_pointer.json`, and `metrics_summary.json` under `outputs/workbench_jobs/{job_id}/`.
+- The runner enforces smoke limits: no arbitrary command execution, no output deletion, local epochs capped at 1, epochs/rounds capped to 1-2 by default, and client sampling capped to a small smoke ratio. Explicit overrides still must stay within the hard cap.
+- For `aggregation_defense` on `KU` with `FedAvg` or `FedRAP`, the runner may launch a real 1-epoch white-listed smoke via `scripts/launch_experiment.py` and return `source=real_smoke`. This is a small link validation job, not a full defense benchmark.
+- Recommendation manipulation, membership inference, and update leakage can reuse existing V3 artifacts with `source=existing_artifact`; this must not be described as freshly trained output. Aggregation defense can return `partial` when only config-only defense evidence exists.
 - Launchable model choices are limited to FedAvg, FedRAP, FedNCF, FCF, MMFedAvg, MMFedRAP, MMFedNCF, and MMFCF. FCF/MMFCF remain partial. MGCN, MMGCN, MMMGCN, and MultiModalMGCN are adapter-required and are not launchable from the workbench.
 - The schema deduplicates dataset choices to `AMAZON_BEAUTY_POC` and `KU`. Amazon target item choices are read from `datasets/AMAZON_BEAUTY_POC/item_metadata.json` and `outputs/security_sidecars/AMAZON_BEAUTY_POC/target_items.json`.
-- Bounded defaults keep smoke configs small: total rounds and epochs are capped at 10, local epochs at 5, and client sampling ratio defaults to 0.2 unless a caller explicitly asks for a larger validation-only ratio.
+- The generator-level bounds remain wider for validation, but the runtime runner clamps execution to the stricter smoke limits above before writing `launcher_config.json`.

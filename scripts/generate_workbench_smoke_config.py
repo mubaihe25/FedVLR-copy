@@ -191,7 +191,7 @@ def get_workbench_options() -> Dict[str, Any]:
         "target_items": get_target_item_options(),
         "notes": [
             "Workbench jobs are bounded smoke/demo configs.",
-            "This generator writes job artifacts only and does not start training.",
+            "This generator validates and normalizes payloads; run_workbench_smoke_job.py executes the bounded smoke job envelope.",
             "MGCN family models require adapters and are not launchable from this workbench.",
         ],
     }
@@ -432,12 +432,13 @@ def validation_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         "normalized_config": normalized,
         "expected_outputs": [
             "config.json",
+            "launcher_config.json",
             "status.json",
             "run.log",
             "result_pointer.json",
             "metrics_summary.json",
         ],
-        "disabled_reason": "The workbench generator validates and records bounded smoke configs; it does not start training.",
+        "disabled_reason": "The generator only validates and records bounded smoke configs; the API may launch the whitelisted smoke runner separately.",
     }
 
 
