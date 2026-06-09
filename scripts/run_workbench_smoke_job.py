@@ -19,6 +19,7 @@ DEFAULT_SCENARIO_ID = "amazon_beauty_poc_security_v3"
 SHOWCASE_ROOT = ROOT / "outputs" / "showcase_artifacts"
 SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 REAL_SMOKE_MODELS = {"FedAvg", "FedRAP"}
+RECOMMENDATION_REAL_SMOKE_TEMPLATE = ROOT / "configs" / "experiment_smoke" / "amazon_beauty_poc_target_injection_smoke.json"
 REAL_SMOKE_TEMPLATE_BY_ALGORITHM = {
     "krum": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_krum_topk_smoke.json",
     "median": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_median_topk_smoke.json",
@@ -154,23 +155,30 @@ def robust_algorithm_key(normalized: Dict[str, Any]) -> str:
 
 
 def can_run_real_smoke(normalized: Dict[str, Any]) -> bool:
-    return (
-        str(normalized.get("direction")) == "aggregation_defense"
-        and str(normalized.get("dataset")) == "KU"
-        and str(normalized.get("model")) in REAL_SMOKE_MODELS
-    )
+    if str(normalized.get("execution_mode")) != "real_smoke":
+        return False
+    direction = str(normalized.get("direction"))
+    dataset = str(normalized.get("dataset"))
+    model = str(normalized.get("model"))
+    if direction == "recommendation_manipulation":
+        return dataset == "AMAZON_BEAUTY_POC" and model == "FedAvg"
+    return direction == "aggregation_defense" and dataset == "KU" and model in REAL_SMOKE_MODELS
 
 
 def build_real_smoke_launcher_config(job_id: str, normalized: Dict[str, Any]) -> Tuple[Dict[str, Any], Path, List[str]]:
     model = str(normalized.get("model") or "FedAvg")
+    direction = str(normalized.get("direction") or "aggregation_defense")
     algorithm_key = robust_algorithm_key(normalized)
-    template_path = REAL_SMOKE_TEMPLATE_BY_ALGORITHM.get(algorithm_key) or REAL_SMOKE_TEMPLATE_BY_ALGORITHM["krum"]
+    if direction == "recommendation_manipulation":
+        template_path = RECOMMENDATION_REAL_SMOKE_TEMPLATE
+    else:
+        template_path = REAL_SMOKE_TEMPLATE_BY_ALGORITHM.get(algorithm_key) or REAL_SMOKE_TEMPLATE_BY_ALGORITHM["krum"]
     config = read_json(template_path, {}) or {}
     if not isinstance(config, dict):
         raise ValueError("invalid_real_smoke_template")
 
     warnings: List[str] = []
-    if algorithm_key not in REAL_SMOKE_TEMPLATE_BY_ALGORITHM:
+    if direction == "aggregation_defense" and algorithm_key not in REAL_SMOKE_TEMPLATE_BY_ALGORITHM:
         warnings.append(f"unsupported_robust_algorithm_for_real_smoke:{algorithm_key};fallback=krum")
 
     training = dict(config.get("training_params") or {})
@@ -193,23 +201,63 @@ def build_real_smoke_launcher_config(job_id: str, normalized: Dict[str, Any]) ->
     except (TypeError, ValueError):
         malicious_ratio = 0.2
 
-    config.update(
-        {
-            "model": model,
-            "dataset": "KU",
-            "scenario": "attack_and_defense",
-            "type": "WorkbenchAggregationDefenseSmoke",
-            "comment": f"workbench_real_smoke_{job_id}",
-            "training_params": training,
-            "malicious_client_config": {"enabled": malicious_ratio > 0, "mode": "ratio", "ratio": malicious_ratio, "client_ids": []},
-        }
-    )
+    if direction == "recommendation_manipulation":
+        attack = dict(normalized.get("attack") or {})
+        target_item_id = str(attack.get("target_item_id") or "0")
+        try:
+            injection_ratio = max(0.0, min(float(attack.get("injection_ratio", 0.2)), 1.0))
+        except (TypeError, ValueError):
+            injection_ratio = 0.2
+        try:
+            max_injections = max(1, min(int(float(attack.get("max_injections_per_client", 10))), 100))
+        except (TypeError, ValueError):
+            max_injections = 10
+        injection = dict((config.get("attack_params") or {}).get("target_interaction_injection") or {})
+        injection.update(
+            {
+                "enabled": True,
+                "target_item_ids": [target_item_id],
+                "target_item_title": attack.get("target_item_title"),
+                "injection_ratio": injection_ratio,
+                "malicious_client_ratio": malicious_ratio,
+                "max_injections_per_client": max_injections,
+                "planner_only": False,
+            }
+        )
+        config.update(
+            {
+                "model": "FedAvg",
+                "dataset": "AMAZON_BEAUTY_POC",
+                "scenario": "attack_only",
+                "type": "WorkbenchRecommendationManipulationSmoke",
+                "comment": f"workbench_real_smoke_{job_id}",
+                "enabled_attacks": ["target_interaction_injection"],
+                "enabled_defenses": [],
+                "enabled_privacy_metrics": [],
+                "training_params": training,
+                "malicious_client_config": {"enabled": malicious_ratio > 0, "mode": "ratio", "ratio": malicious_ratio, "client_ids": []},
+                "attack_params": {"target_interaction_injection": injection},
+            }
+        )
+    else:
+        config.update(
+            {
+                "model": model,
+                "dataset": "KU",
+                "scenario": "attack_and_defense",
+                "type": "WorkbenchAggregationDefenseSmoke",
+                "comment": f"workbench_real_smoke_{job_id}",
+                "training_params": training,
+                "malicious_client_config": {"enabled": malicious_ratio > 0, "mode": "ratio", "ratio": malicious_ratio, "client_ids": []},
+            }
+        )
     extra_config = dict(config.get("extra_config") or {})
     extra_config.update(
         {
             "smoke_only": True,
             "workbench_job_id": job_id,
             "workbench_source": "real_smoke",
+            "workbench_direction": direction,
             "runtime_limits": {
                 "max_epochs": 1,
                 "max_local_epochs": 1,
@@ -296,7 +344,7 @@ def run_real_smoke(job_id: str, job_dir: Path, launcher_config: Dict[str, Any]) 
     metrics = {
         "recall_at_50": _number_or_raw(csv_metrics.get("recall_at_50")),
         "ndcg_at_50": _number_or_raw(csv_metrics.get("ndcg_at_50")),
-        "direction": "aggregation_defense",
+        "direction": (launcher_config.get("extra_config") or {}).get("workbench_direction") or "aggregation_defense",
         "model": experiment.get("model") or launcher_config.get("model"),
         "dataset": experiment.get("dataset") or launcher_config.get("dataset"),
         "source": "real_smoke",
@@ -531,6 +579,7 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
     write_json(job_dir / "launcher_config.json", launcher_config)
     append_log(job_dir, "[prepare] Wrote config.json and launcher_config.json with runtime limits.")
     time.sleep(0.2)
+    fallback_source = "probe_smoke" if str(normalized.get("execution_mode")) == "probe_smoke" else "existing_artifact"
 
     scenario_id = str(normalized.get("scenario_id") or DEFAULT_SCENARIO_ID)
     artifact_dir = (SHOWCASE_ROOT / scenario_id).resolve()
@@ -547,13 +596,13 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
             "progress": 45,
             "direction": direction,
             "scenario_id": scenario_id,
-            "source": "existing_artifact",
+            "source": fallback_source,
             "artifact_dir": repo_relative(artifact_dir),
             "warnings": warnings,
             "errors": [],
         },
     )
-    append_log(job_dir, f"[run] Direction={direction}; using bounded existing evidence source.")
+    append_log(job_dir, f"[run] Direction={direction}; source={fallback_source}; using bounded exported evidence/probe envelope.")
     append_log(job_dir, "[run] No arbitrary shell command or long training is executed by this runner.")
     time.sleep(0.25)
 
@@ -569,7 +618,7 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
     result_pointer = {
         "job_id": job_id,
         "status": final_status,
-        "source": "existing_artifact",
+        "source": fallback_source,
         "config": "config.json",
         "launcher_config": "launcher_config.json",
         "status_file": "status.json",
@@ -583,11 +632,11 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
     metrics_summary = {
         "job_id": job_id,
         "status": final_status,
-        "source": "existing_artifact",
+        "source": fallback_source,
         "direction": direction,
         "scenario_id": scenario_id,
         "metrics": metrics,
-        "message": "复用已导出的安全证据；不是本次新训练生成的完整结果。",
+        "message": "运行轻量 probe，复用导出的安全证据生成结果摘要；不是完整训练 benchmark。" if fallback_source == "probe_smoke" else "复用已导出的安全证据；不是本次新训练生成的完整结果。",
         "partial_reason": partial_reason,
         "runtime_limits": launcher_config.get("workbench_runtime_limits"),
     }
@@ -605,10 +654,10 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
             "error_message": partial_reason,
             "result_dir": None,
             "artifact_dir": repo_relative(artifact_dir),
-            "source": "existing_artifact",
+            "source": fallback_source,
         },
     )
-    append_log(job_dir, f"[done] status={final_status}; source=existing_artifact.")
+    append_log(job_dir, f"[done] status={final_status}; source={fallback_source}.")
     if partial_reason:
         append_log(job_dir, f"[boundary] {partial_reason}.")
     return 0 if final_status in {"completed", "partial"} else 1

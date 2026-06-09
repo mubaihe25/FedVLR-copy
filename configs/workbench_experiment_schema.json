@@ -31,6 +31,26 @@
       "default_scenario_id": "security_matrix_krum_demo"
     }
   ],
+  "execution_modes": [
+    {
+      "id": "existing_artifact",
+      "label": "复用已导出证据",
+      "description": "读取已有 V3 artifact，快速完成，不启动训练。",
+      "source": "existing_artifact"
+    },
+    {
+      "id": "real_smoke",
+      "label": "运行轻量训练",
+      "description": "通过白名单 runner 启动受限 smoke；运行时继续强制限制轮数、本地轮数和采样比例。",
+      "source": "real_smoke"
+    },
+    {
+      "id": "probe_smoke",
+      "label": "运行 probe smoke",
+      "description": "只运行或回填轻量 probe 证据；用于成员推断和更新泄露，不写成完整训练。",
+      "source": "probe_smoke"
+    }
+  ],
   "datasets": [
     {
       "id": "AMAZON_BEAUTY_POC",
@@ -68,47 +88,63 @@
   "robust_aggregators": ["Krum", "Median", "TrimmedMean", "Bulyan"],
   "direction_parameters": {
     "recommendation_manipulation": [
+      "execution_mode",
       "dataset",
       "model",
       "target_item",
       "epochs",
       "local_epochs",
       "client_sampling_ratio",
+      "client_count",
       "malicious_client_ratio",
       "injection_ratio",
       "max_injections_per_client",
       "attack_strength",
+      "target_loss_weight",
+      "target_rank_selector",
       "learning_rate",
       "weight_decay",
       "batch_size",
+      "seed",
+      "top_k",
       "save_topk",
       "export_audit"
     ],
     "membership_inference": [
+      "execution_mode",
       "dataset",
       "model",
       "evidence_source",
       "label_source",
       "sample_count",
       "threshold_strategy",
+      "mia_model",
+      "member_nonmember_ratio",
       "learning_rate",
       "weight_decay",
+      "seed",
       "export_pair_scores",
       "export_audit"
     ],
     "update_leakage": [
+      "execution_mode",
       "dataset",
       "model",
+      "update_input_source",
       "candidate_count",
+      "candidate_pool_size",
       "hit_k",
       "risk_modality",
+      "similarity_method",
       "client_count",
       "learning_rate",
       "weight_decay",
+      "seed",
       "export_reconstruction",
       "export_audit"
     ],
     "aggregation_defense": [
+      "execution_mode",
       "dataset",
       "model",
       "base_attack",
@@ -126,19 +162,91 @@
       "bulyan_f",
       "dp_style_noise_enabled",
       "dp_noise_sigma",
+      "noise_multiplier",
+      "max_grad_norm",
+      "target_delta",
+      "seed",
       "secure_aggregation_enabled"
     ]
   },
   "defense_parameters": {
-    "Krum": ["krum_f", "distance_metric"],
-    "Median": ["median_clip_norm"],
-    "TrimmedMean": ["trimmed_mean_ratio"],
-    "Bulyan": ["bulyan_f", "bulyan_selection_ratio"],
-    "dp_style_noise": ["dp_noise_sigma", "gradient_clip_norm"]
+    "Krum": ["krum_f", "multi_krum_enabled", "distance_metric", "gradient_clip_norm"],
+    "Median": ["median_clip_norm", "coordinate_median", "outlier_strategy"],
+    "TrimmedMean": ["trimmed_mean_ratio", "trim_min_keep", "gradient_clip_norm"],
+    "Bulyan": ["bulyan_f", "bulyan_selection_ratio", "trimmed_mean_ratio", "gradient_clip_norm"],
+    "dp_style_noise": ["noise_multiplier", "max_grad_norm", "target_delta", "seed"]
   },
   "compatibility_matrix": {
-    "AMAZON_BEAUTY_POC": ["FedAvg"],
+    "AMAZON_BEAUTY_POC": ["FedAvg", "FedRAP", "FedNCF", "FCF", "MMFedAvg", "MMFedRAP", "MMFedNCF", "MMFCF"],
     "KU": ["FedAvg", "FedRAP", "FedNCF", "FCF", "MMFedAvg", "MMFedRAP", "MMFedNCF", "MMFCF"]
+  },
+  "model_dataset_execution": {
+    "AMAZON_BEAUTY_POC": {
+      "FedAvg": {"status": "real_smoke", "allowed_execution_modes": ["existing_artifact", "real_smoke"], "message": "FedAvg + Amazon 是当前推荐操纵和 V3 主证据底座，可启动受限 smoke。"},
+      "FedRAP": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"},
+      "FedNCF": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"},
+      "FCF": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"},
+      "MMFedAvg": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"},
+      "MMFedRAP": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"},
+      "MMFedNCF": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"},
+      "MMFCF": {"status": "existing_artifact_only", "allowed_execution_modes": ["existing_artifact"], "message": "当前可配置和复用证据，不能启动 Amazon real_smoke。"}
+    },
+    "KU": {
+      "FedAvg": {"status": "real_smoke", "allowed_execution_modes": ["existing_artifact", "real_smoke"], "message": "KU + FedAvg 可用于聚合防御受限 smoke。"},
+      "FedRAP": {"status": "real_smoke", "allowed_execution_modes": ["existing_artifact", "real_smoke"], "message": "KU + FedRAP 可用于聚合防御受限 smoke。"},
+      "FedNCF": {"status": "validate_or_existing", "allowed_execution_modes": ["existing_artifact"], "message": "模型链路已进入能力矩阵，但 workbench real_smoke 暂不启动。"},
+      "FCF": {"status": "partial", "allowed_execution_modes": ["existing_artifact"], "message": "部分支持，已通过基础 smoke；安全效果不能写成完整 benchmark。"},
+      "MMFedAvg": {"status": "validate_or_existing", "allowed_execution_modes": ["existing_artifact"], "message": "模型链路已进入能力矩阵，但 workbench real_smoke 暂不启动。"},
+      "MMFedRAP": {"status": "validate_or_existing", "allowed_execution_modes": ["existing_artifact"], "message": "多模态主展示模型；当前 workbench 可复用证据或配置校验。"},
+      "MMFedNCF": {"status": "validate_or_existing", "allowed_execution_modes": ["existing_artifact"], "message": "模型链路已进入能力矩阵，但 workbench real_smoke 暂不启动。"},
+      "MMFCF": {"status": "partial", "allowed_execution_modes": ["existing_artifact"], "message": "部分支持，已通过基础 smoke；安全效果不能写成完整 benchmark。"}
+    }
+  },
+  "parameter_descriptors": {
+    "execution_mode": {"type": "enum", "label": "执行模式", "default": "existing_artifact", "options": ["existing_artifact", "real_smoke", "probe_smoke"], "help_text": "复用证据不训练；轻量训练由 runner 继续强制 smoke 上限。"},
+    "dataset": {"type": "enum", "label": "数据集", "options": ["AMAZON_BEAUTY_POC", "KU"], "help_text": "前端只展示 Amazon Beauty 和 KU 多模态数据集。"},
+    "model": {"type": "enum", "label": "模型", "options": ["FedAvg", "FedRAP", "FedNCF", "FCF", "MMFedAvg", "MMFedRAP", "MMFedNCF", "MMFCF"], "help_text": "8 个可启动模型均可进入配置；real_smoke 能力由 validate 返回。"},
+    "epochs": {"type": "number", "label": "训练轮数", "min": 1, "max": 10, "step": 1, "default": 1, "help_text": "runner 会把 real_smoke 继续限制到 1-2 轮。"},
+    "local_epochs": {"type": "number", "label": "本地轮数", "min": 1, "max": 5, "step": 1, "default": 1, "help_text": "runner real_smoke 固定限制为 1。"},
+    "client_sampling_ratio": {"type": "number", "label": "采样比例", "min": 0.01, "max": 1.0, "step": 0.01, "default": 0.05, "unit": "ratio", "help_text": "runner real_smoke 默认不超过 0.05。"},
+    "client_count": {"type": "number", "label": "客户端数", "min": 1, "max": 5000, "step": 1, "default": 100},
+    "learning_rate": {"type": "number", "label": "学习率", "min": 0.00001, "max": 0.1, "step": 0.0001, "default": 0.001},
+    "weight_decay": {"type": "number", "label": "权重衰减", "min": 0, "max": 1, "step": 0.0001, "default": 0, "help_text": "优化器 L2 正则，不是防御参数。"},
+    "batch_size": {"type": "enum", "label": "Batch size", "options": [64, 128, 256, 512], "default": 128},
+    "seed": {"type": "number", "label": "Seed", "min": 0, "max": 999999, "step": 1, "default": 2026},
+    "top_k": {"type": "enum", "label": "TopK", "options": [10, 20, 50], "default": 50},
+    "target_item": {"type": "target_item", "label": "目标商品", "depends_on": ["dataset"], "visible_when": {"direction": "recommendation_manipulation"}, "help_text": "使用中文短名、缩略图和 item id 搜索。"},
+    "malicious_client_ratio": {"type": "number", "label": "恶意客户端比例", "min": 0, "max": 0.6, "step": 0.01, "default": 0.2},
+    "injection_ratio": {"type": "number", "label": "注入比例", "min": 0, "max": 1, "step": 0.01, "default": 0.2, "visible_when": {"direction": "recommendation_manipulation"}},
+    "max_injections_per_client": {"type": "number", "label": "每客户端最大注入数", "min": 1, "max": 100, "step": 1, "default": 10, "visible_when": {"direction": "recommendation_manipulation"}},
+    "attack_strength": {"type": "enum", "label": "攻击强度", "options": ["weak", "medium", "strong"], "default": "strong", "visible_when": {"direction": "recommendation_manipulation"}},
+    "target_loss_weight": {"type": "number", "label": "目标 loss 权重", "min": 0, "max": 10, "step": 0.1, "default": 1.0, "visible_when": {"direction": "recommendation_manipulation"}, "help_text": "当前 target promotion loss 仍是可行性边界。"},
+    "target_rank_selector": {"type": "enum", "label": "target rank selector", "options": ["unmasked_rank", "masked_top50", "both"], "default": "both", "visible_when": {"direction": "recommendation_manipulation"}},
+    "save_topk": {"type": "boolean", "label": "保存 TopK", "default": true},
+    "export_artifact": {"type": "boolean", "label": "导出审计结果", "default": true},
+    "mia_evidence_source": {"type": "enum", "label": "MIA 证据源", "options": ["rank", "unmasked rank", "checkpoint score", "auto"], "default": "auto", "visible_when": {"direction": "membership_inference"}},
+    "mia_model": {"type": "enum", "label": "MIA 模型", "options": ["threshold", "logistic_probe", "rank_proxy"], "default": "rank_proxy", "visible_when": {"direction": "membership_inference"}},
+    "membership_sample_count": {"type": "number", "label": "样本数", "min": 1, "max": 5000, "step": 20, "default": 200, "visible_when": {"direction": "membership_inference"}},
+    "member_nonmember_ratio": {"type": "number", "label": "训练/非训练记录比例", "min": 0.1, "max": 10, "step": 0.1, "default": 1, "visible_when": {"direction": "membership_inference"}},
+    "update_input_source": {"type": "enum", "label": "输入来源", "options": ["client_update", "participant_params", "item_embedding"], "default": "client_update", "visible_when": {"direction": "update_leakage"}},
+    "candidate_pool_size": {"type": "number", "label": "候选池大小", "min": 10, "max": 5000, "step": 10, "default": 500, "visible_when": {"direction": "update_leakage"}},
+    "risk_modality": {"type": "enum", "label": "风险模态", "options": ["item embedding", "image", "text"], "default": "item embedding", "visible_when": {"direction": "update_leakage"}},
+    "similarity_method": {"type": "enum", "label": "相似度方法", "options": ["cosine", "dot", "l2"], "default": "cosine", "visible_when": {"direction": "update_leakage"}},
+    "aggregation_mode": {"type": "enum", "label": "聚合模式", "options": ["plain_updates", "secure_aggregation"], "default": "plain_updates", "disabled_when": {"robust_aggregators": "non_empty"}, "help_text": "安全聚合模拟与逐客户端鲁棒聚合互斥。"},
+    "robust_aggregators": {"type": "multi_enum", "label": "鲁棒算法", "options": ["Krum", "Median", "TrimmedMean", "Bulyan"], "default": [], "disabled_when": {"aggregation_mode": "secure_aggregation"}},
+    "krum_f": {"type": "number", "label": "Krum f", "min": 1, "max": 10, "step": 1, "default": 1, "visible_when": {"robust_aggregators": "Krum"}},
+    "multi_krum_enabled": {"type": "boolean", "label": "multi-krum", "default": false, "visible_when": {"robust_aggregators": "Krum"}},
+    "distance_metric": {"type": "enum", "label": "距离度量", "options": ["l2", "cosine"], "default": "l2", "visible_when": {"robust_aggregators": "Krum"}},
+    "median_clip_norm": {"type": "number", "label": "Median 裁剪范数", "min": 0, "max": 20, "step": 0.5, "default": 5, "visible_when": {"robust_aggregators": "Median"}},
+    "coordinate_median": {"type": "boolean", "label": "坐标中位数", "default": true, "visible_when": {"robust_aggregators": "Median"}},
+    "trim_ratio": {"type": "number", "label": "trim ratio", "min": 0.01, "max": 0.49, "step": 0.01, "default": 0.2, "visible_when": {"robust_aggregators": "TrimmedMean"}},
+    "trim_min_keep": {"type": "number", "label": "min keep", "min": 1, "max": 100, "step": 1, "default": 2, "visible_when": {"robust_aggregators": "TrimmedMean"}},
+    "bulyan_f": {"type": "number", "label": "Bulyan f", "min": 1, "max": 10, "step": 1, "default": 1, "visible_when": {"robust_aggregators": "Bulyan"}},
+    "bulyan_selection_ratio": {"type": "number", "label": "候选集比例", "min": 0.1, "max": 1, "step": 0.05, "default": 0.5, "visible_when": {"robust_aggregators": "Bulyan"}},
+    "dp_noise_enabled": {"type": "boolean", "label": "DP-style noise", "default": false, "help_text": "无 formal privacy accountant。"},
+    "noise_multiplier": {"type": "number", "label": "noise multiplier", "min": 0, "max": 5, "step": 0.05, "default": 0.15, "visible_when": {"dp_noise_enabled": true}},
+    "max_grad_norm": {"type": "number", "label": "max grad norm", "min": 0.1, "max": 20, "step": 0.1, "default": 5, "visible_when": {"dp_noise_enabled": true}},
+    "target_delta": {"type": "number", "label": "target delta", "min": 0.000001, "max": 0.1, "step": 0.000001, "default": 0.00001, "visible_when": {"dp_noise_enabled": true}}
   },
   "bounds": {
     "max_epochs": 10,
@@ -160,6 +268,7 @@
     "default_batch_size": 128
   },
   "defaults": {
+    "execution_mode": "existing_artifact",
     "learning_rate": 0.001,
     "weight_decay": 0.0,
     "gradient_clip": 5.0,
@@ -171,6 +280,10 @@
     "median_clip_norm": 5.0,
     "distance_metric": "euclidean",
     "bulyan_selection_ratio": 0.5,
+    "noise_multiplier": 0.15,
+    "max_grad_norm": 5.0,
+    "target_delta": 0.00001,
+    "seed": 2026,
     "base_attack": "random_poisoning",
     "threshold_strategy": "auto",
     "label_source": "membership_labels",
