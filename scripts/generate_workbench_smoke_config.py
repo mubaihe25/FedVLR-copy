@@ -332,9 +332,6 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     if requested_execution_mode == "real_smoke":
         if supports_real_smoke(direction, dataset, model):
             execution_mode = "real_smoke"
-        elif direction in PROBE_SMOKE_DIRECTIONS:
-            execution_mode = "probe_smoke"
-            warnings.append(f"real_smoke_downgraded_to_probe_smoke:{direction}:{model}:{dataset}")
         else:
             add_error("execution_mode", f"real_smoke_not_available:{direction}:{model}:{dataset}")
     elif requested_execution_mode == "probe_smoke":
