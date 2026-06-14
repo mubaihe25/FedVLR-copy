@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import uuid
 from datetime import datetime, timezone
@@ -16,22 +17,8 @@ AMAZON_DATASET = "AMAZON_BEAUTY_POC"
 CANONICAL_DATASET_IDS = {"AMAZON_BEAUTY_POC", "KU"}
 LAUNCHABLE_MODEL_IDS = {"FedAvg", "FedRAP", "FedNCF", "FCF", "MMFedAvg", "MMFedRAP", "MMFedNCF", "MMFCF"}
 EXECUTION_MODE_ALIASES = {
-    "existing_artifact": "existing_artifact",
-    "reuse_existing": "existing_artifact",
-    "reuse_artifact": "existing_artifact",
-    "artifact": "existing_artifact",
-    "real_smoke": "real_smoke",
-    "light_smoke": "real_smoke",
-    "smoke": "real_smoke",
-    "probe_smoke": "probe_smoke",
-    "probe": "probe_smoke",
+    "full_train": "full_train",
 }
-REAL_SMOKE_SUPPORT = {
-    ("recommendation_manipulation", "AMAZON_BEAUTY_POC", "FedAvg"),
-    ("aggregation_defense", "KU", "FedAvg"),
-    ("aggregation_defense", "KU", "FedRAP"),
-}
-PROBE_SMOKE_DIRECTIONS = {"membership_inference", "update_leakage"}
 TARGET_ZH_RULES = [
     ("Empty Amber Glass Spray Bottles", "琥珀玻璃喷雾瓶套装", "琥珀喷雾瓶"),
     ("Bouquet Garni Body Shower White Musk", "白麝香香氛沐浴露", "白麝香沐浴露"),
@@ -57,16 +44,16 @@ DIRECTION_ALIASES = {
 }
 
 ATTACKS_BY_DIRECTION = {
-    "recommendation_manipulation": ["poisoning_attack"],
+    "recommendation_manipulation": ["target_interaction_injection"],
     "membership_inference": [],
     "update_leakage": [],
     "aggregation_defense": ["poisoning_attack"],
 }
 
 PRIVACY_BY_DIRECTION = {
-    "recommendation_manipulation": ["membership_inference", "interaction_reconstruction"],
-    "membership_inference": ["membership_inference"],
-    "update_leakage": ["interaction_reconstruction"],
+    "recommendation_manipulation": [],
+    "membership_inference": ["membership_inference_probe"],
+    "update_leakage": ["interaction_reconstruction_probe"],
     "aggregation_defense": [],
 }
 
@@ -237,23 +224,27 @@ def get_workbench_options() -> Dict[str, Any]:
     return {
         "schema_version": data.get("version"),
         "directions": data.get("directions", []),
-        "execution_modes": data.get("execution_modes", []),
         "datasets": canonical_datasets(data),
         "models": launchable_models(data),
         "adapter_required_models": data.get("adapter_required_models", []),
         "aggregation_visibility_modes": data.get("aggregation_visibility_modes", []),
         "robust_aggregators": data.get("robust_aggregators", []),
+        "common_parameters": data.get("common_parameters", []),
+        "fixed_parameters": data.get("fixed_parameters", {}),
         "direction_parameters": data.get("direction_parameters", {}),
         "defense_parameters": data.get("defense_parameters", {}),
         "compatibility_matrix": data.get("compatibility_matrix", {}),
-        "model_dataset_execution": data.get("model_dataset_execution", {}),
+        "model_dataset_execution": data.get(
+            "model_dataset_code_capabilities",
+            data.get("model_dataset_execution", {}),
+        ),
         "parameter_descriptors": data.get("parameter_descriptors", {}),
         "bounds": data.get("bounds", {}),
         "defaults": data.get("defaults", {}),
         "target_items": get_target_item_options(),
         "notes": [
-            "Workbench jobs are bounded smoke/demo configs.",
-            "This generator validates and normalizes payloads; run_workbench_smoke_job.py executes the bounded smoke job envelope.",
+            "Workbench jobs always request full training.",
+            "Unsupported direction, dataset, and model combinations fail validation instead of falling back to another execution path.",
             "MGCN family models require adapters and are not launchable from this workbench.",
         ],
     }
@@ -266,27 +257,40 @@ def normalize_direction(value: Any) -> str:
     return DIRECTION_ALIASES[key]
 
 
-def normalize_execution_mode(value: Any, default: str = "existing_artifact") -> str:
+def normalize_execution_mode(value: Any, default: str = "full_train") -> str:
     key = str(value or default).strip()
     if key not in EXECUTION_MODE_ALIASES:
         raise ValueError(f"unknown_execution_mode:{key}")
     return EXECUTION_MODE_ALIASES[key]
 
 
-def supports_real_smoke(direction: str, dataset: str, model: str) -> bool:
-    return (direction, dataset, model) in REAL_SMOKE_SUPPORT
+def supports_full_train(
+    data: Dict[str, Any], direction: str, dataset: str, model: str
+) -> bool:
+    capability = execution_capability(data, dataset, model)
+    allowed_modes = set(capability.get("allowed_execution_modes", []))
+    supported_directions = set(
+        capability.get(
+            "supported_directions",
+            [item.get("id") for item in data.get("directions", [])],
+        )
+    )
+    return "full_train" in allowed_modes and direction in supported_directions
 
 
 def execution_capability(data: Dict[str, Any], dataset: str, model: str) -> Dict[str, Any]:
-    matrix = data.get("model_dataset_execution", {})
+    matrix = data.get(
+        "model_dataset_code_capabilities",
+        data.get("model_dataset_execution", {}),
+    )
     dataset_record = matrix.get(dataset, {}) if isinstance(matrix, dict) else {}
     record = dataset_record.get(model, {}) if isinstance(dataset_record, dict) else {}
     if isinstance(record, dict) and record:
         return dict(record)
     return {
-        "status": "validate_only",
-        "allowed_execution_modes": ["existing_artifact"],
-        "message": "当前组合可进入配置校验；真实 smoke 需后端适配或补充证据。",
+        "status": "unsupported",
+        "allowed_execution_modes": [],
+        "message": "当前组合不支持工作台真实全量训练。",
     }
 
 
@@ -294,6 +298,8 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     data = schema()
     bounds = data.get("bounds", {})
     defaults = data.get("defaults", {})
+    descriptors = data.get("parameter_descriptors", {})
+    fixed_parameters = data.get("fixed_parameters", {})
     warnings: List[str] = []
     errors: List[str] = []
 
@@ -310,12 +316,60 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
         errors.append(code)
         field_errors.setdefault(field, []).append(code)
 
+    def descriptor(field: str) -> Dict[str, Any]:
+        record = descriptors.get(field, {}) if isinstance(descriptors, dict) else {}
+        return record if isinstance(record, dict) else {}
+
+    def raw_value(*names: str) -> Any:
+        for name in names:
+            if name in payload:
+                return payload[name]
+        return None
+
+    def numeric_parameter(
+        field: str,
+        names: Tuple[str, ...],
+        *,
+        integer: bool = False,
+        fallback: float | int | None = None,
+        validate: bool = True,
+    ) -> float | int:
+        record = descriptor(field)
+        default = record.get("default", fallback if fallback is not None else 0)
+        raw = raw_value(*names)
+        value = as_int(raw, int(default)) if integer else as_float(raw, float(default))
+        minimum = record.get("min")
+        maximum = record.get("max")
+        step = record.get("step")
+        if validate and integer and raw is not None:
+            raw_number = as_float(raw, float(value))
+            if not raw_number.is_integer():
+                add_error(field, f"{field}_must_be_integer")
+        if validate and minimum is not None and value < minimum:
+            add_error(field, f"{field}_below_min:{minimum}")
+        if validate and maximum is not None and value > maximum:
+            add_error(field, f"{field}_above_max:{maximum}")
+        if validate and step and step > 0:
+            origin = minimum if minimum is not None else 0
+            step_count = (float(value) - float(origin)) / float(step)
+            if abs(step_count - round(step_count)) > 1e-8:
+                add_error(field, f"{field}_invalid_step:{step}")
+        return value
+
+    def enum_parameter(field: str, names: Tuple[str, ...], *, fallback: str = "", validate: bool = True) -> str:
+        record = descriptor(field)
+        value = str(raw_value(*names) or record.get("default", fallback))
+        options = record.get("options", [])
+        if validate and options and value not in options:
+            add_error(field, f"{field}_invalid_option:{value}")
+        return value
+
     model = str(payload.get("model") or direction_record.get("default_model") or "FedAvg")
     dataset = str(payload.get("dataset") or direction_record.get("default_dataset") or "AMAZON_BEAUTY_POC")
     try:
-        requested_execution_mode = normalize_execution_mode(payload.get("execution_mode", payload.get("executionMode")), defaults.get("execution_mode", "existing_artifact"))
+        requested_execution_mode = normalize_execution_mode(payload.get("execution_mode", payload.get("executionMode")), defaults.get("execution_mode", "full_train"))
     except ValueError as exc:
-        requested_execution_mode = defaults.get("execution_mode", "existing_artifact")
+        requested_execution_mode = defaults.get("execution_mode", "full_train")
         add_error("execution_mode", str(exc))
     execution_mode = requested_execution_mode
     if model in adapter_models:
@@ -328,28 +382,19 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     if model in models and dataset in datasets and model not in selectable_for_dataset:
         warnings.append(f"model_dataset_outside_selectable_matrix:{model}:{dataset}")
     capability = execution_capability(data, dataset, model)
-    allowed_execution_modes = set(capability.get("allowed_execution_modes", []))
-    if requested_execution_mode == "real_smoke":
-        if supports_real_smoke(direction, dataset, model):
-            execution_mode = "real_smoke"
-        else:
-            add_error("execution_mode", f"real_smoke_not_available:{direction}:{model}:{dataset}")
-    elif requested_execution_mode == "probe_smoke":
-        if direction not in PROBE_SMOKE_DIRECTIONS:
-            add_error("execution_mode", f"probe_smoke_not_available:{direction}")
-        else:
-            execution_mode = "probe_smoke"
-    elif requested_execution_mode == "existing_artifact":
-        execution_mode = "existing_artifact"
-    if allowed_execution_modes and requested_execution_mode not in allowed_execution_modes and requested_execution_mode != "probe_smoke":
-        warnings.append(f"execution_mode_limited:{model}:{dataset}:{capability.get('status')}")
-    should_emit_capability_message = not (
-        requested_execution_mode == "real_smoke"
-        and not supports_real_smoke(direction, dataset, model)
-        and direction not in PROBE_SMOKE_DIRECTIONS
-    )
-    if capability.get("message") and should_emit_capability_message:
-        warnings.append(str(capability["message"]))
+    if requested_execution_mode != "full_train" or not supports_full_train(
+        data, direction, dataset, model
+    ):
+        add_error("execution_mode", f"full_train_not_available:{direction}:{model}:{dataset}")
+    verification_status = str(capability.get("verification_status", "not_verified"))
+    verified_directions = set(capability.get("verified_directions", []))
+    if (
+        verification_status not in {"full_train_verified", "smoke_verified"}
+        and direction not in verified_directions
+    ):
+        warnings.append(
+            f"full_train_code_path_not_yet_verified:{direction}:{model}:{dataset}"
+        )
 
     total_rounds = as_int(payload.get("total_rounds", payload.get("totalRounds")), bounds.get("default_total_rounds", 10))
     total_rounds = int(clamp_number(total_rounds, 1, bounds.get("max_total_rounds", 10)))
@@ -358,19 +403,31 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     local_epochs = as_int(payload.get("local_epochs", payload.get("localEpochs")), bounds.get("default_local_epochs", 5))
     local_epochs = int(clamp_number(local_epochs, 1, bounds.get("max_local_epochs", 5)))
 
-    explicit_large_ratio = as_bool(payload.get("allow_large_client_ratio") or payload.get("explicit_large_client_ratio"), False)
-    ratio_max = bounds.get("max_client_sampling_ratio_explicit" if explicit_large_ratio else "max_client_sampling_ratio_default", 0.2)
-    client_ratio = as_float(payload.get("client_sampling_ratio", payload.get("clientSamplingRate")), bounds.get("default_client_sampling_ratio", 0.2))
-    if client_ratio > ratio_max and not explicit_large_ratio:
-        warnings.append("client_sampling_ratio_clamped_to_bounded_smoke_default")
-    client_ratio = clamp_number(client_ratio, 0.01, ratio_max)
+    client_ratio = float(numeric_parameter("client_sampling_ratio", ("client_sampling_ratio", "clientSamplingRate")))
+    total_client_count = max(1, as_int(payload.get("total_client_count", payload.get("totalClientCount")), descriptor("client_count").get("default", 100)))
+    sampled_client_count = max(1, math.ceil(total_client_count * client_ratio))
+    batch_size = int(numeric_parameter("batch_size", ("batch_size", "batchSize"), integer=True))
+    batch_options = descriptor("batch_size").get("options", [])
+    if batch_options and batch_size not in batch_options:
+        add_error("batch_size", f"batch_size_invalid_option:{batch_size}")
+    seed = int(numeric_parameter("seed", ("seed",), integer=True))
+    gradient_clip = float(numeric_parameter("gradient_clip", ("gradient_clip", "gradientClip")))
 
-    malicious_ratio = as_float(payload.get("malicious_client_ratio", payload.get("poisoningRatio")), bounds.get("default_malicious_client_ratio", 0.2))
-    malicious_ratio = clamp_number(
-        malicious_ratio,
-        bounds.get("min_malicious_client_ratio", 0.0),
-        bounds.get("max_malicious_client_ratio", 0.6),
+    recommendation_direction = direction == "recommendation_manipulation"
+    recommendation_malicious_ratio = float(
+        numeric_parameter(
+            "malicious_client_ratio",
+            ("malicious_client_ratio", "poisoningRatio"),
+            validate=recommendation_direction,
+        )
     )
+    anomaly_client_ratio = as_float(
+        payload.get("anomaly_client_ratio", payload.get("anomalyClientRatio")),
+        bounds.get("default_malicious_client_ratio", 0.2),
+    )
+    if direction == "aggregation_defense" and not 0 <= anomaly_client_ratio <= 0.6:
+        add_error("anomaly_client_ratio", "anomaly_client_ratio_out_of_range:0:0.6")
+    malicious_ratio = recommendation_malicious_ratio if recommendation_direction else anomaly_client_ratio if direction == "aggregation_defense" else 0.0
 
     aggregation_mode = str(payload.get("aggregation_mode", payload.get("aggregationMode")) or "plain_updates")
     if aggregation_mode not in {"plain_updates", "secure_aggregation"}:
@@ -380,20 +437,90 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     for item in robust_aggregators:
         if item not in allowed_robust:
             add_error("robust_aggregators", f"unknown_robust_aggregator:{item}")
+    if len(robust_aggregators) > 1:
+        add_error("robust_aggregators", "multiple_robust_aggregators_not_supported")
     if aggregation_mode == "secure_aggregation" and robust_aggregators:
         add_error("secure_aggregation_enabled", "secure_aggregation_conflicts_with_robust_aggregation")
         add_error("robust_aggregators", "secure_aggregation_conflicts_with_robust_aggregation")
 
     dp_noise_enabled = as_bool(payload.get("dp_noise_enabled", payload.get("dpNoiseEnabled")), False)
-    trim_ratio = as_float(payload.get("trim_ratio", payload.get("trimRatio")), defaults.get("trim_ratio", 0.2))
-    krum_f = as_int(payload.get("krum_f", payload.get("krumF")), defaults.get("krum_f", 1))
-    bulyan_f = as_int(payload.get("bulyan_f", payload.get("bulyanF")), defaults.get("bulyan_f", 1))
-    if "TrimmedMean" in robust_aggregators and not (0 < trim_ratio < 0.5):
-        add_error("trimmed_mean_ratio", "trimmed_mean_ratio_must_be_between_0_and_0_5")
-    if "Krum" in robust_aggregators and krum_f < 1:
-        add_error("krum_f", "krum_f_must_be_positive")
-    if "Bulyan" in robust_aggregators and bulyan_f < 1:
-        add_error("bulyan_f", "bulyan_f_must_be_positive")
+    krum_max = math.floor((sampled_client_count - 3) / 2)
+    bulyan_max = math.floor((sampled_client_count - 3) / 4)
+    krum_default = min(1, max(0, krum_max))
+    bulyan_default = min(1, max(0, bulyan_max))
+    trim_ratio = float(numeric_parameter("trim_ratio", ("trim_ratio", "trimRatio"), validate="TrimmedMean" in robust_aggregators))
+    trim_min_keep = int(numeric_parameter("trim_min_keep", ("trim_min_keep", "trimMinKeep"), integer=True, validate=False))
+    raw_trim_min_keep = raw_value("trim_min_keep", "trimMinKeep")
+    raw_krum_f = raw_value("krum_f", "krumF")
+    raw_bulyan_f = raw_value("bulyan_f", "bulyanF")
+    krum_f = as_int(raw_krum_f, krum_default)
+    bulyan_f = as_int(raw_bulyan_f, bulyan_default)
+    multi_krum_enabled = as_bool(raw_value("multi_krum_enabled", "multiKrumEnabled"), False)
+    distance_metric = enum_parameter("distance_metric", ("distance_metric", "distanceMetric"), validate="Krum" in robust_aggregators)
+    defense_gradient_clip_norm = float(
+        numeric_parameter(
+            "gradient_clip_norm",
+            ("gradient_clip_norm", "gradientClipNorm"),
+            validate=bool({"Krum", "Median"}.intersection(robust_aggregators)),
+        )
+    )
+    outlier_strategy = enum_parameter(
+        "outlier_strategy",
+        ("outlier_strategy", "outlierStrategy"),
+        validate="Median" in robust_aggregators,
+    )
+    bulyan_selection_ratio = float(
+        numeric_parameter(
+            "bulyan_selection_ratio",
+            ("bulyan_selection_ratio", "bulyanSelectionRatio"),
+            validate="Bulyan" in robust_aggregators,
+        )
+    )
+    if "Krum" in robust_aggregators:
+        if raw_krum_f is not None and not as_float(raw_krum_f, float(krum_f)).is_integer():
+            add_error("krum_f", "krum_f_must_be_integer")
+        if sampled_client_count < 3:
+            add_error("krum_f", f"krum_requires_at_least_3_sampled_clients:{sampled_client_count}")
+        elif krum_f < 0 or krum_f > krum_max:
+            add_error("krum_f", f"krum_f_out_of_range:0:{krum_max}")
+    if "TrimmedMean" in robust_aggregators:
+        if raw_trim_min_keep is not None and not as_float(raw_trim_min_keep, float(trim_min_keep)).is_integer():
+            add_error("trim_min_keep", "trim_min_keep_must_be_integer")
+        if sampled_client_count < 2:
+            add_error("trim_min_keep", f"trimmed_mean_requires_at_least_2_sampled_clients:{sampled_client_count}")
+        elif trim_min_keep < 2 or trim_min_keep > sampled_client_count:
+            add_error("trim_min_keep", f"trim_min_keep_out_of_range:2:{sampled_client_count}")
+    if "Bulyan" in robust_aggregators:
+        if raw_bulyan_f is not None and not as_float(raw_bulyan_f, float(bulyan_f)).is_integer():
+            add_error("bulyan_f", "bulyan_f_must_be_integer")
+        if sampled_client_count < 3:
+            add_error("bulyan_f", f"bulyan_requires_at_least_3_sampled_clients:{sampled_client_count}")
+        elif bulyan_f < 0 or bulyan_f > bulyan_max:
+            add_error("bulyan_f", f"bulyan_f_out_of_range:0:{bulyan_max}")
+
+    noise_multiplier = float(numeric_parameter("noise_multiplier", ("noise_multiplier", "noiseMultiplier"), validate=dp_noise_enabled))
+    max_grad_norm = float(numeric_parameter("max_grad_norm", ("max_grad_norm", "maxGradNorm"), validate=dp_noise_enabled))
+    target_delta = float(numeric_parameter("target_delta", ("target_delta", "targetDelta"), validate=False))
+    if dp_noise_enabled and target_delta not in descriptor("target_delta").get("options", []):
+        add_error("target_delta", f"target_delta_invalid_option:{target_delta}")
+    dp_seed = int(numeric_parameter("dp_seed", ("dp_seed", "dpSeed"), integer=True, validate=dp_noise_enabled))
+
+    attack_strength = enum_parameter("attack_strength", ("attack_strength", "attackStrength"), validate=recommendation_direction)
+    attack_strength_multiplier = float(descriptor("attack_strength").get("value_map", {}).get(attack_strength, 1.0))
+    injection_ratio = float(numeric_parameter("injection_ratio", ("injection_ratio", "injectionRatio"), validate=recommendation_direction))
+    max_injections_per_client = int(
+        numeric_parameter(
+            "max_injections_per_client",
+            ("max_injections_per_client", "maxInjectionsPerClient"),
+            integer=True,
+            validate=recommendation_direction,
+        )
+    )
+    target_loss_weight = float(numeric_parameter("target_loss_weight", ("target_loss_weight", "targetLossWeight"), validate=recommendation_direction))
+    target_rank_selector = enum_parameter("target_rank_selector", ("target_rank_selector", "targetRankSelector"), validate=recommendation_direction)
+    fixed_top_k = int(fixed_parameters.get("top_k", 50))
+    if raw_value("top_k", "topK") not in (None, fixed_top_k, str(fixed_top_k)):
+        warnings.append(f"top_k_fixed_to_{fixed_top_k}")
     target_item_id = str(payload.get("target_item_id", payload.get("targetItemId")) or "0")
     target_title = payload.get("target_item_title", payload.get("targetItemTitle"))
     target_options = get_target_item_options()
@@ -406,15 +533,26 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
         warnings.append("candidate_k_clamped_to_50")
         candidate_k = 50
 
-    enabled_defenses: List[str] = []
+    robust_defense_names = {
+        "Krum": "krum",
+        "Median": "median",
+        "TrimmedMean": "trimmed_mean",
+        "Bulyan": "bulyan",
+    }
+    enabled_defenses: List[str] = [robust_defense_names[item] for item in robust_aggregators if item in robust_defense_names]
     if dp_noise_enabled:
         enabled_defenses.append("dp_noise")
     if aggregation_mode == "secure_aggregation":
         enabled_defenses.append("secure_aggregation_sim")
-    if robust_aggregators:
-        enabled_defenses.append("robust_aggregation")
 
-    enabled_attacks = ATTACKS_BY_DIRECTION[direction]
+    base_attack = str(payload.get("base_attack", payload.get("baseAttack")) or defaults.get("base_attack", "none"))
+    if direction == "aggregation_defense" and base_attack not in {"none", "malicious_update"}:
+        add_error("base_attack", f"aggregation_defense_invalid_base_attack:{base_attack}")
+    perturbation_type = str(payload.get("perturbation_type", payload.get("perturbationType")) or "sign_flip")
+    if direction == "aggregation_defense" and base_attack == "malicious_update" and perturbation_type != "sign_flip":
+        add_error("perturbation_type", f"full_train_perturbation_not_supported:{perturbation_type}")
+    enabled_attacks = [] if direction == "aggregation_defense" and base_attack == "none" else ATTACKS_BY_DIRECTION[direction]
+    malicious_clients_enabled = malicious_ratio > 0 and not (direction == "aggregation_defense" and base_attack == "none")
     enabled_privacy = PRIVACY_BY_DIRECTION[direction]
     if direction == "membership_inference":
         scenario = "privacy_observation"
@@ -447,23 +585,25 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
             "client_sampling_ratio": client_ratio,
             "learning_rate": as_float(payload.get("learning_rate", payload.get("learningRate")), defaults.get("learning_rate", 0.001)),
             "weight_decay": as_float(payload.get("weight_decay", payload.get("weightDecay")), defaults.get("weight_decay", 0.0)),
-            "gradient_clip": as_float(payload.get("gradient_clip", payload.get("gradientClip")), defaults.get("gradient_clip", 5.0)),
-            "batch_size": as_int(payload.get("batch_size", payload.get("batchSize")), defaults.get("batch_size", 128)),
-            "seed": as_int(payload.get("seed"), defaults.get("seed", 2026)),
-            "top_k": as_int(payload.get("top_k", payload.get("topK")), 50),
+            "gradient_clip": gradient_clip,
+            "batch_size": batch_size,
+            "seed": seed,
+            "total_client_count": total_client_count,
+            "sampled_client_count": sampled_client_count,
+            "top_k": fixed_top_k,
             "save_topk": as_bool(payload.get("save_topk", payload.get("saveTopK")), defaults.get("save_topk", True)),
             "export_artifact": as_bool(payload.get("export_artifact", payload.get("exportArtifact")), defaults.get("export_artifact", True)),
         },
         "attack": {
             "malicious_client_ratio": malicious_ratio,
-            "attack_strength": str(payload.get("attack_strength", payload.get("attackStrength")) or defaults.get("attack_strength", "strong")),
+            "attack_strength": attack_strength,
+            "attack_strength_multiplier": attack_strength_multiplier,
             "target_item_id": target_item_id,
             "target_item_title": target_title or (target_record or {}).get("title"),
-            "injection_ratio": as_float(payload.get("injection_ratio", payload.get("injectionRatio")), defaults.get("injection_ratio", 0.2)),
-            "max_injections_per_client": as_int(payload.get("max_injections_per_client", payload.get("maxInjectionsPerClient")), defaults.get("max_injections_per_client", 10)),
-            "target_loss_weight": as_float(payload.get("target_loss_weight", payload.get("targetLossWeight")), 1.0),
-            "target_rank_selector": str(payload.get("target_rank_selector", payload.get("targetRankSelector")) or "both"),
-            "preserve_topk": as_bool(payload.get("preserve_topk", payload.get("preserveTopK")), True),
+            "injection_ratio": injection_ratio,
+            "max_injections_per_client": max_injections_per_client,
+            "target_loss_weight": target_loss_weight,
+            "target_rank_selector": target_rank_selector,
         },
         "privacy": {
             "mia_evidence_source": str(payload.get("mia_evidence_source", payload.get("evidenceSource")) or "auto"),
@@ -490,29 +630,28 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
             "show_candidate_images": as_bool(payload.get("show_candidate_images", payload.get("showCandidateImages")), True),
         },
         "defense": {
-            "base_attack": str(payload.get("base_attack", payload.get("baseAttack")) or defaults.get("base_attack", "random_poisoning")),
-            "gradient_clip_norm": as_float(payload.get("gradient_clip_norm", payload.get("gradientClipNorm")), defaults.get("gradient_clip", 5.0)),
+            "base_attack": base_attack,
+            "gradient_clip_norm": defense_gradient_clip_norm,
+            "outlier_strategy": outlier_strategy,
             "trim_ratio": trim_ratio,
-            "trim_min_keep": as_int(payload.get("trim_min_keep", payload.get("trimMinKeep")), 2),
+            "trim_min_keep": trim_min_keep,
             "krum_f": krum_f,
-            "multi_krum_enabled": as_bool(payload.get("multi_krum_enabled", payload.get("multiKrumEnabled")), False),
-            "median_clip_norm": as_float(payload.get("median_clip_norm", payload.get("medianClipNorm")), defaults.get("median_clip_norm", 5.0)),
-            "coordinate_median": as_bool(payload.get("coordinate_median", payload.get("coordinateMedian")), True),
-            "outlier_strategy": str(payload.get("outlier_strategy", payload.get("outlierStrategy")) or "clip"),
-            "distance_metric": str(payload.get("distance_metric", payload.get("distanceMetric")) or defaults.get("distance_metric", "euclidean")),
+            "multi_krum_enabled": multi_krum_enabled,
+            "distance_metric": distance_metric,
             "bulyan_f": bulyan_f,
-            "bulyan_selection_ratio": as_float(payload.get("bulyan_selection_ratio", payload.get("bulyanSelectionRatio")), defaults.get("bulyan_selection_ratio", 0.5)),
-            "dp_noise_std": as_float(payload.get("dp_noise_std", payload.get("dpNoiseStd")), defaults.get("dp_noise_std", 0.15)),
-            "noise_multiplier": as_float(payload.get("noise_multiplier", payload.get("noiseMultiplier")), defaults.get("noise_multiplier", defaults.get("dp_noise_std", 0.15))),
-            "max_grad_norm": as_float(payload.get("max_grad_norm", payload.get("maxGradNorm")), defaults.get("max_grad_norm", 5.0)),
-            "target_delta": as_float(payload.get("target_delta", payload.get("targetDelta")), defaults.get("target_delta", 0.00001)),
+            "bulyan_selection_ratio": bulyan_selection_ratio,
+            "dp_noise_std": noise_multiplier,
+            "noise_multiplier": noise_multiplier,
+            "max_grad_norm": max_grad_norm,
+            "target_delta": target_delta,
+            "dp_seed": dp_seed,
         },
         "field_errors": field_errors,
         "unified_experiment_config": {
             "model": model,
             "dataset": dataset,
             "scenario": scenario,
-            "type": "WorkbenchSmoke",
+            "type": "WorkbenchFullTrain",
             "comment": f"workbench:{direction}",
             "execution_mode": execution_mode,
             "requested_execution_mode": requested_execution_mode,
@@ -521,8 +660,8 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
             "enabled_defenses": enabled_defenses,
             "enabled_privacy_metrics": enabled_privacy,
             "malicious_client_config": {
-                "enabled": malicious_ratio > 0,
-                "mode": "ratio" if malicious_ratio > 0 else "none",
+                "enabled": malicious_clients_enabled,
+                "mode": "ratio" if malicious_clients_enabled else "none",
                 "ratio": malicious_ratio,
                 "client_ids": [],
             },
@@ -531,13 +670,17 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 "total_rounds": total_rounds,
                 "local_epochs": local_epochs,
                 "client_sampling_ratio": client_ratio,
+                "clients_sample_ratio": client_ratio,
                 "lr": as_float(payload.get("learning_rate", payload.get("learningRate")), defaults.get("learning_rate", 0.001)),
                 "learning_rate": as_float(payload.get("learning_rate", payload.get("learningRate")), defaults.get("learning_rate", 0.001)),
                 "weight_decay": as_float(payload.get("weight_decay", payload.get("weightDecay")), defaults.get("weight_decay", 0.0)),
-                "gradient_clip": as_float(payload.get("gradient_clip", payload.get("gradientClip")), defaults.get("gradient_clip", 5.0)),
-                "seed": as_int(payload.get("seed"), defaults.get("seed", 2026)),
+                "gradient_clip": gradient_clip,
+                "batch_size": batch_size,
+                "seed": seed,
                 "save_recommended_topk": as_bool(payload.get("save_topk", payload.get("saveTopK")), defaults.get("save_topk", True)),
-                "recommendation_topk": as_int(payload.get("top_k", payload.get("topK")), 50),
+                "top_k": fixed_top_k,
+                "topk": [fixed_top_k],
+                "recommendation_topk": fixed_top_k,
                 "export_security_artifact": as_bool(payload.get("export_artifact", payload.get("exportArtifact")), defaults.get("export_artifact", True)),
             },
             "attack_params": {
@@ -546,24 +689,41 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
                     "target_item_ids": [target_item_id],
                     "target_item_title": target_title or (target_record or {}).get("title"),
                     "malicious_client_ratio": malicious_ratio,
-                    "injection_ratio": as_float(payload.get("injection_ratio", payload.get("injectionRatio")), defaults.get("injection_ratio", 0.2)),
-                    "max_injections_per_client": as_int(payload.get("max_injections_per_client", payload.get("maxInjectionsPerClient")), defaults.get("max_injections_per_client", 10)),
-                    "target_loss_weight": as_float(payload.get("target_loss_weight", payload.get("targetLossWeight")), 1.0),
-                    "target_rank_selector": str(payload.get("target_rank_selector", payload.get("targetRankSelector")) or "both"),
+                    "injection_ratio": injection_ratio,
+                    "max_injections_per_client": max_injections_per_client,
+                    "target_loss_weight": target_loss_weight,
+                    "attack_strength": attack_strength_multiplier,
+                    "target_rank_selector": target_rank_selector,
                     "planner_only": False,
+                },
+                "poisoning_attack": {
+                    "base_attack": base_attack,
+                    "poisoning_enabled_substrategies": [perturbation_type],
+                    "perturbation_type": perturbation_type,
+                    "perturbation_strength": as_float(payload.get("perturbation_strength", payload.get("perturbationStrength")), 1.5),
+                    "poisoning_attack_scale": as_float(payload.get("perturbation_strength", payload.get("perturbationStrength")), 1.5),
+                    "poisoning_sign_flip_scale": as_float(payload.get("perturbation_strength", payload.get("perturbationStrength")), 1.5),
                 }
             },
             "defense_params": {
-                "robust_aggregation": {
-                    "enabled": bool(robust_aggregators),
-                    "algorithms": robust_aggregators,
-                    "trim_ratio": as_float(payload.get("trim_ratio", payload.get("trimRatio")), defaults.get("trim_ratio", 0.2)),
-                    "trim_min_keep": as_int(payload.get("trim_min_keep", payload.get("trimMinKeep")), 2),
-                    "krum_f": as_int(payload.get("krum_f", payload.get("krumF")), defaults.get("krum_f", 1)),
-                    "multi_krum_enabled": as_bool(payload.get("multi_krum_enabled", payload.get("multiKrumEnabled")), False),
-                    "bulyan_f": as_int(payload.get("bulyan_f", payload.get("bulyanF")), defaults.get("bulyan_f", 1)),
-                    "bulyan_selection_ratio": as_float(payload.get("bulyan_selection_ratio", payload.get("bulyanSelectionRatio")), defaults.get("bulyan_selection_ratio", 0.5)),
-                    "distance_metric": str(payload.get("distance_metric", payload.get("distanceMetric")) or defaults.get("distance_metric", "euclidean")),
+                "krum": {
+                    "krum_f": krum_f,
+                    "multi_krum_enabled": multi_krum_enabled,
+                    "distance_metric": distance_metric,
+                    "gradient_clip_norm": defense_gradient_clip_norm,
+                },
+                "median": {
+                    "enabled": "Median" in robust_aggregators,
+                    "gradient_clip_norm": defense_gradient_clip_norm,
+                    "outlier_strategy": outlier_strategy,
+                },
+                "trimmed_mean": {
+                    "trim_ratio": trim_ratio,
+                    "trim_min_keep": trim_min_keep,
+                },
+                "bulyan": {
+                    "bulyan_f": bulyan_f,
+                    "bulyan_selection_ratio": bulyan_selection_ratio,
                 },
                 "secure_aggregation_sim": {
                     "enabled": aggregation_mode == "secure_aggregation",
@@ -571,16 +731,17 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 },
                 "dp_noise": {
                     "enabled": dp_noise_enabled,
-                    "noise_std": as_float(payload.get("dp_noise_std", payload.get("dpNoiseStd")), defaults.get("dp_noise_std", 0.15)),
-                    "noise_multiplier": as_float(payload.get("noise_multiplier", payload.get("noiseMultiplier")), defaults.get("noise_multiplier", defaults.get("dp_noise_std", 0.15))),
-                    "max_grad_norm": as_float(payload.get("max_grad_norm", payload.get("maxGradNorm")), defaults.get("max_grad_norm", 5.0)),
-                    "target_delta": as_float(payload.get("target_delta", payload.get("targetDelta")), defaults.get("target_delta", 0.00001)),
+                    "noise_std": noise_multiplier,
+                    "noise_multiplier": noise_multiplier,
+                    "max_grad_norm": max_grad_norm,
+                    "target_delta": target_delta,
+                    "seed": dp_seed,
                     "formal_accountant": False,
                 },
             },
             "privacy_params": {
-                "membership_inference": {
-                    "enabled": "membership_inference" in enabled_privacy,
+                "membership_inference_probe": {
+                    "enabled": "membership_inference_probe" in enabled_privacy,
                     "evidence_source": str(payload.get("mia_evidence_source", payload.get("evidenceSource")) or "auto"),
                     "mia_model": str(payload.get("mia_model", payload.get("miaModel")) or "rank_proxy"),
                     "sample_count": int(
@@ -591,8 +752,8 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
                         )
                     ),
                 },
-                "interaction_reconstruction": {
-                    "enabled": "interaction_reconstruction" in enabled_privacy,
+                "interaction_reconstruction_probe": {
+                    "enabled": "interaction_reconstruction_probe" in enabled_privacy,
                     "candidate_k": candidate_k,
                     "candidate_pool_size": as_int(payload.get("candidate_pool_size", payload.get("candidatePoolSize")), 500),
                     "risk_modality": str(payload.get("risk_modality", payload.get("riskModality")) or "item embedding"),
@@ -631,7 +792,7 @@ def validation_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             "result_pointer.json",
             "metrics_summary.json",
         ],
-        "disabled_reason": "The generator only validates and records bounded smoke configs; the API may launch the whitelisted smoke runner separately.",
+        "disabled_reason": None,
     }
 
 
@@ -655,7 +816,7 @@ def write_workbench_job(payload: Dict[str, Any], output_root: Path = DEFAULT_OUT
         "updated_at": created_at,
         "direction": config_payload.get("direction"),
         "scenario_id": config_payload.get("scenario_id"),
-        "message": "训练任务启动未接入；已生成受限 smoke 配置和 job 档案。" if response["valid"] else "配置未通过校验。",
+        "message": "已生成全量训练配置和 job 档案；此辅助命令本身不启动训练。" if response["valid"] else "配置未通过校验。",
         "disabled_reason": response["disabled_reason"],
         "warnings": response["warnings"],
         "errors": response["errors"],
@@ -686,7 +847,7 @@ def write_workbench_job(payload: Dict[str, Any], output_root: Path = DEFAULT_OUT
         f"[{created_at}] Workbench job {safe_id} recorded.",
         f"[validate] status={status}",
         "[boundary] This path does not start real training.",
-        "[next] Use existing showcase artifacts or connect a bounded launcher explicitly.",
+        "[next] Submit the validated config through the workbench API to start training.",
     ]
     (job_dir / "run.log").write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
@@ -708,7 +869,7 @@ def write_workbench_job(payload: Dict[str, Any], output_root: Path = DEFAULT_OUT
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate a bounded FedVLR workbench smoke config/job artifact.")
+    parser = argparse.ArgumentParser(description="Generate a FedVLR workbench full-training config/job artifact.")
     parser.add_argument("--payload", help="Workbench payload as JSON string.")
     parser.add_argument("--payload-file", help="Workbench payload JSON file.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_ROOT), help="Output directory for job artifacts.")

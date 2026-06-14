@@ -1,6 +1,8 @@
 import copy
 import math
+import os
 
+import numpy as np
 import torch
 import torch.nn as nn
 from torch import optim
@@ -33,11 +35,21 @@ class MMFedRAP(GeneralRecommender):
             num_embeddings=self.n_items, embedding_dim=self.embed_size
         )
 
+        dataset_path = os.path.abspath(config["data_path"] + config["dataset"])
+        text_feature_dim = self._feature_dim(
+            os.path.join(dataset_path, config["text_feature_file"]), self.embed_size
+        )
+        vision_feature_dim = self._feature_dim(
+            os.path.join(dataset_path, config["vision_feature_file"]), self.embed_size
+        )
+
         # 多模态融合层
         self.fusion = FusionLayer(
             self.embed_size,
             fusion_module=config["fusion_module"],
             latent_dim=self.latent_size,
+            txt_in_dim=text_feature_dim,
+            vis_in_dim=vision_feature_dim,
         )
 
         # 输出层
@@ -48,6 +60,15 @@ class MMFedRAP(GeneralRecommender):
 
         # 初始化参数
         self.apply(xavier_normal_initialization)
+
+    @staticmethod
+    def _feature_dim(feature_path, fallback):
+        if not os.path.isfile(feature_path):
+            return fallback
+        feature_shape = np.load(feature_path, mmap_mode="r", allow_pickle=True).shape
+        if len(feature_shape) < 2:
+            return fallback
+        return int(feature_shape[-1])
 
     def set_item_commonality(self, item_commonality):
         """设置项目共性嵌入"""

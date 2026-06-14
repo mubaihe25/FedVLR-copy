@@ -40,13 +40,28 @@ MODALITY_TOKENS = {
 class InteractionReconstructionProbe(BasePrivacyMetric):
     """Infer high-change item candidates from real participant_params."""
 
+    @staticmethod
+    def _normalize_topk(value: Any, default: int = 10) -> int:
+        if isinstance(value, (list, tuple)):
+            numeric_values = []
+            for item in value:
+                try:
+                    numeric_values.append(int(item))
+                except (TypeError, ValueError):
+                    continue
+            return max(numeric_values) if numeric_values else default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
     def __init__(
         self,
         name: str = "interaction_reconstruction_probe",
         config: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__(name=name, config=config)
-        self.topk = int(
+        self.topk = self._normalize_topk(
             self._config_get(
                 config,
                 "interaction_reconstruction_topk",

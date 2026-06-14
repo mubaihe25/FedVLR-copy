@@ -138,6 +138,7 @@ def module_names(capabilities: Dict[str, Any], section: str) -> set[str]:
 def matches_validated_combination(
     capabilities: Dict[str, Any],
     model_name: str,
+    dataset_name: str,
     scenario: str,
     attacks: List[str],
     defenses: List[str],
@@ -145,6 +146,9 @@ def matches_validated_combination(
 ) -> Tuple[bool, Optional[str]]:
     for item in capabilities.get("validated_combinations", []):
         if item.get("scenario") != scenario:
+            continue
+        validated_datasets = item.get("validated_datasets")
+        if validated_datasets and dataset_name not in validated_datasets:
             continue
         if list(item.get("attacks", [])) != attacks:
             continue
@@ -236,7 +240,13 @@ def validate_config(
         warnings.append("attack_and_defense_scenario_does_not_match_enabled_modules")
 
     is_validated, reason = matches_validated_combination(
-        capabilities, model_name, scenario, attacks, defenses, privacy_metrics
+        capabilities,
+        model_name,
+        dataset_name,
+        scenario,
+        attacks,
+        defenses,
+        privacy_metrics,
     )
     if not is_validated:
         message = "unvalidated_combination:{}".format(reason)

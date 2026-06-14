@@ -1,32 +1,23 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_ROOT = ROOT / "outputs" / "workbench_jobs"
-DEFAULT_SCENARIO_ID = "amazon_beauty_poc_security_v3"
-SHOWCASE_ROOT = ROOT / "outputs" / "showcase_artifacts"
 SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
-REAL_SMOKE_MODELS = {"FedAvg", "FedRAP"}
-RECOMMENDATION_REAL_SMOKE_TEMPLATE = ROOT / "configs" / "experiment_smoke" / "amazon_beauty_poc_target_injection_smoke.json"
-REAL_SMOKE_TEMPLATE_BY_ALGORITHM = {
-    "krum": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_krum_topk_smoke.json",
-    "median": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_median_topk_smoke.json",
-    "trimmedmean": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_trimmed_mean_topk_smoke.json",
-    "trimmed_mean": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_trimmed_mean_topk_smoke.json",
-    "bulyan": ROOT / "configs" / "experiment_smoke" / "security_matrix" / "poisoning_bulyan_topk_smoke.json",
-}
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import generate_workbench_smoke_config as generator  # noqa: E402
@@ -94,181 +85,35 @@ def normalize_input(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str],
     return normalized, warnings, errors
 
 
-def cap_int(value: Any, default: int, upper: int) -> int:
-    try:
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        parsed = default
-    return max(1, min(parsed, upper))
-
-
-def cap_float(value: Any, default: float, lower: float, upper: float) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        parsed = default
-    return max(lower, min(parsed, upper))
-
-
-def build_launcher_config(normalized: Dict[str, Any], raw_payload: Dict[str, Any]) -> Dict[str, Any]:
+def build_full_train_launcher_config(job_id: str, normalized: Dict[str, Any]) -> Dict[str, Any]:
     unified = dict(normalized.get("unified_experiment_config") or {})
     training = dict(unified.get("training_params") or normalized.get("training") or {})
-
-    allow_extended = bool(raw_payload.get("allow_extended_smoke") or raw_payload.get("allow_runtime_overrides"))
-    max_epochs = 5 if allow_extended else 2
-    max_client_ratio = 0.1 if raw_payload.get("explicit_large_client_ratio") or raw_payload.get("allow_large_client_ratio") else 0.05
-
-    epochs = cap_int(training.get("epochs") or training.get("total_rounds"), 1, max_epochs)
-    total_rounds = cap_int(training.get("total_rounds") or epochs, epochs, max_epochs)
-    local_epochs = 1
-    client_ratio = cap_float(training.get("client_sampling_ratio"), 0.05, 0.01, max_client_ratio)
-
-    training.update(
+    client_ratio = training.get("client_sampling_ratio", training.get("clients_sample_ratio"))
+    if client_ratio is not None:
+        training["client_sampling_ratio"] = client_ratio
+        training["clients_sample_ratio"] = client_ratio
+    training["top_k"] = 50
+    training["topk"] = [50]
+    training["recommendation_topk"] = 50
+    unified["training_params"] = training
+    unified["type"] = "WorkbenchFullTrain"
+    unified["comment"] = f"workbench_full_train_{job_id}"
+    extra_config = dict(unified.get("extra_config") or {})
+    extra_config.update(
         {
-            "epochs": epochs,
-            "total_rounds": total_rounds,
-            "local_epochs": local_epochs,
-            "client_sampling_ratio": client_ratio,
-            "bounded_by_workbench_runner": True,
+            "workbench_job_id": job_id,
+            "workbench_source": "full_train",
+            "workbench_direction": normalized.get("direction"),
         }
     )
-    unified["training_params"] = training
-    unified["workbench_runtime_limits"] = {
-        "max_epochs": max_epochs,
-        "max_local_epochs": 1,
-        "max_client_sampling_ratio": max_client_ratio,
+    unified["extra_config"] = extra_config
+    unified["workbench_runtime_policy"] = {
         "no_arbitrary_command": True,
         "no_output_deletion": True,
     }
     return unified
 
 
-def robust_algorithm_key(normalized: Dict[str, Any]) -> str:
-    values = normalized.get("robust_aggregators")
-    if isinstance(values, str):
-        values = [values]
-    if isinstance(values, list) and values:
-        first = str(values[0]).strip()
-    else:
-        first = "Krum"
-    return first.replace("-", "_").replace(" ", "").lower()
-
-
-def can_run_real_smoke(normalized: Dict[str, Any]) -> bool:
-    if str(normalized.get("execution_mode")) != "real_smoke":
-        return False
-    direction = str(normalized.get("direction"))
-    dataset = str(normalized.get("dataset"))
-    model = str(normalized.get("model"))
-    if direction == "recommendation_manipulation":
-        return dataset == "AMAZON_BEAUTY_POC" and model == "FedAvg"
-    return direction == "aggregation_defense" and dataset == "KU" and model in REAL_SMOKE_MODELS
-
-
-def build_real_smoke_launcher_config(job_id: str, normalized: Dict[str, Any]) -> Tuple[Dict[str, Any], Path, List[str]]:
-    model = str(normalized.get("model") or "FedAvg")
-    direction = str(normalized.get("direction") or "aggregation_defense")
-    algorithm_key = robust_algorithm_key(normalized)
-    if direction == "recommendation_manipulation":
-        template_path = RECOMMENDATION_REAL_SMOKE_TEMPLATE
-    else:
-        template_path = REAL_SMOKE_TEMPLATE_BY_ALGORITHM.get(algorithm_key) or REAL_SMOKE_TEMPLATE_BY_ALGORITHM["krum"]
-    config = read_json(template_path, {}) or {}
-    if not isinstance(config, dict):
-        raise ValueError("invalid_real_smoke_template")
-
-    warnings: List[str] = []
-    if direction == "aggregation_defense" and algorithm_key not in REAL_SMOKE_TEMPLATE_BY_ALGORITHM:
-        warnings.append(f"unsupported_robust_algorithm_for_real_smoke:{algorithm_key};fallback=krum")
-
-    training = dict(config.get("training_params") or {})
-    training.update(
-        {
-            "epochs": 1,
-            "total_rounds": 1,
-            "local_epochs": 1,
-            "clients_sample_ratio": 0.05,
-            "client_sampling_ratio": 0.05,
-            "use_gpu": False,
-            "eval_step": 1,
-            "collect_round_metrics": True,
-            "save_recommended_topk": bool((normalized.get("training") or {}).get("save_topk", True)),
-        }
-    )
-    malicious_ratio = (normalized.get("attack") or {}).get("malicious_client_ratio", 0.2)
-    try:
-        malicious_ratio = max(0.0, min(float(malicious_ratio), 0.2))
-    except (TypeError, ValueError):
-        malicious_ratio = 0.2
-
-    if direction == "recommendation_manipulation":
-        attack = dict(normalized.get("attack") or {})
-        target_item_id = str(attack.get("target_item_id") or "0")
-        try:
-            injection_ratio = max(0.0, min(float(attack.get("injection_ratio", 0.2)), 1.0))
-        except (TypeError, ValueError):
-            injection_ratio = 0.2
-        try:
-            max_injections = max(1, min(int(float(attack.get("max_injections_per_client", 10))), 100))
-        except (TypeError, ValueError):
-            max_injections = 10
-        injection = dict((config.get("attack_params") or {}).get("target_interaction_injection") or {})
-        injection.update(
-            {
-                "enabled": True,
-                "target_item_ids": [target_item_id],
-                "target_item_title": attack.get("target_item_title"),
-                "injection_ratio": injection_ratio,
-                "malicious_client_ratio": malicious_ratio,
-                "max_injections_per_client": max_injections,
-                "planner_only": False,
-            }
-        )
-        config.update(
-            {
-                "model": "FedAvg",
-                "dataset": "AMAZON_BEAUTY_POC",
-                "scenario": "attack_only",
-                "type": "WorkbenchRecommendationManipulationSmoke",
-                "comment": f"workbench_real_smoke_{job_id}",
-                "enabled_attacks": ["target_interaction_injection"],
-                "enabled_defenses": [],
-                "enabled_privacy_metrics": [],
-                "training_params": training,
-                "malicious_client_config": {"enabled": malicious_ratio > 0, "mode": "ratio", "ratio": malicious_ratio, "client_ids": []},
-                "attack_params": {"target_interaction_injection": injection},
-            }
-        )
-    else:
-        config.update(
-            {
-                "model": model,
-                "dataset": "KU",
-                "scenario": "attack_and_defense",
-                "type": "WorkbenchAggregationDefenseSmoke",
-                "comment": f"workbench_real_smoke_{job_id}",
-                "training_params": training,
-                "malicious_client_config": {"enabled": malicious_ratio > 0, "mode": "ratio", "ratio": malicious_ratio, "client_ids": []},
-            }
-        )
-    extra_config = dict(config.get("extra_config") or {})
-    extra_config.update(
-        {
-            "smoke_only": True,
-            "workbench_job_id": job_id,
-            "workbench_source": "real_smoke",
-            "workbench_direction": direction,
-            "runtime_limits": {
-                "max_epochs": 1,
-                "max_local_epochs": 1,
-                "max_client_sampling_ratio": 0.05,
-                "no_arbitrary_command": True,
-                "no_output_deletion": True,
-            },
-        }
-    )
-    config["extra_config"] = extra_config
-    return config, template_path, warnings
 
 
 def parse_first_json_object(text: str) -> Dict[str, Any]:
@@ -280,6 +125,23 @@ def parse_first_json_object(text: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def extract_subprocess_error(output: str, return_code: int) -> Tuple[str, str]:
+    detail = output.strip()
+    summary = f"训练子进程退出码 {return_code}"
+    traceback_lines = [line.strip() for line in detail.splitlines() if line.strip()]
+    exception_line = next(
+        (
+            line
+            for line in reversed(traceback_lines)
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception):", line)
+        ),
+        None,
+    )
+    if exception_line:
+        summary = f"{summary}：{exception_line}"
+    return summary, detail
 
 
 def read_csv_summary_metrics(csv_path: Path | None) -> Dict[str, Any]:
@@ -300,18 +162,47 @@ def read_csv_summary_metrics(csv_path: Path | None) -> Dict[str, Any]:
     }
 
 
-def run_real_smoke(job_id: str, job_dir: Path, launcher_config: Dict[str, Any]) -> Tuple[str, Dict[str, Any], Dict[str, Any], str | None]:
+def run_full_train(
+    job_id: str,
+    job_dir: Path,
+    launcher_config: Dict[str, Any],
+    *,
+    config_name: str = "launcher_config.json",
+    phase: str = "training",
+    progress: int = 42,
+) -> Tuple[str, Dict[str, Any], Dict[str, Any], str | None]:
     launcher_path = ROOT / "scripts" / "launch_experiment.py"
     if not launcher_path.exists():
         raise FileNotFoundError("launch_experiment.py")
-    config_path = job_dir / "launcher_config.json"
+    config_path = job_dir / config_name
     write_json(config_path, launcher_config)
     command = [sys.executable, str(launcher_path), "--config", str(config_path)]
+    command_display = subprocess.list2cmdline(command)
+    runtime_metadata = {
+        "subprocess_command": command_display,
+        "python_path": str(Path(sys.executable).resolve()),
+        "cwd": str(ROOT),
+        "launcher_path": str(launcher_path),
+        "return_code": None,
+        "phase": phase,
+    }
 
-    update_status(job_dir, {"status": "running", "stage": "running", "progress": 42, "source": "real_smoke"})
-    append_log(job_dir, f"[run] Starting real bounded smoke via {repo_relative(launcher_path)}.")
+    update_status(
+        job_dir,
+        {
+            "status": "running",
+            "stage": phase,
+            "progress": progress,
+            "source": "full_train",
+            "message": "正在执行 FedVLR 真实训练入口。",
+            **runtime_metadata,
+        },
+    )
+    append_log(job_dir, f"[{phase}] command={command_display}")
+    append_log(job_dir, f"[{phase}] python={runtime_metadata['python_path']}")
+    append_log(job_dir, f"[{phase}] cwd={runtime_metadata['cwd']}")
     started = time.time()
-    process = subprocess.run(  # noqa: S603 - fixed Python executable and whitelisted launcher path.
+    process = subprocess.Popen(  # noqa: S603 - fixed Python executable and whitelisted launcher path.
         command,
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
@@ -319,20 +210,49 @@ def run_real_smoke(job_id: str, job_dir: Path, launcher_config: Dict[str, Any]) 
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=180,
-        check=False,
+        bufsize=1,
     )
+    update_status(job_dir, {"pid": process.pid, "subprocess_pid": process.pid})
+    append_log(job_dir, f"[{phase}] pid={process.pid}")
+    output_lines: List[str] = []
+    if process.stdout is not None:
+        with (job_dir / "run.log").open("a", encoding="utf-8") as handle:
+            for line in process.stdout:
+                output_lines.append(line)
+                handle.write(line)
+                handle.flush()
+        process.stdout.close()
+    return_code = process.wait()
     elapsed = round(time.time() - started, 3)
-    with (job_dir / "run.log").open("a", encoding="utf-8") as handle:
-        handle.write(process.stdout or "")
-        if process.stdout and not process.stdout.endswith("\n"):
-            handle.write("\n")
-    append_log(job_dir, f"[run] Launcher exited with code={process.returncode}; elapsed={elapsed}s.")
+    process_output = "".join(output_lines)
+    update_status(job_dir, {"return_code": return_code, "subprocess_return_code": return_code})
+    append_log(job_dir, f"[{phase}] Launcher exited with code={return_code}; elapsed={elapsed}s.")
+    status_payload = read_json(job_dir / "status.json", {}) or {}
+    subprocess_runs = list(status_payload.get("subprocess_runs") or [])
+    subprocess_runs.append(
+        {
+            **runtime_metadata,
+            "pid": process.pid,
+            "return_code": return_code,
+            "elapsed_seconds": elapsed,
+        }
+    )
+    update_status(job_dir, {"subprocess_runs": subprocess_runs})
 
-    launch_payload = parse_first_json_object(process.stdout or "")
-    if process.returncode != 0 or not launch_payload.get("ok"):
-        error_message = launch_payload.get("errors") or f"launcher_failed:{process.returncode}"
-        return "failed", {}, {"launch_payload": launch_payload}, str(error_message)
+    launch_payload = parse_first_json_object(process_output)
+    if return_code != 0 or not launch_payload.get("ok"):
+        error_summary, error_detail = extract_subprocess_error(process_output, return_code)
+        if launch_payload.get("errors"):
+            error_summary = f"{error_summary}：{launch_payload['errors']}"
+        update_status(
+            job_dir,
+            {
+                "failure_stage": phase,
+                "error_summary": error_summary,
+                "error_detail": error_detail,
+            },
+        )
+        return "failed", {}, {"launch_payload": launch_payload, **runtime_metadata, "return_code": return_code}, error_summary
 
     experiment = launch_payload.get("experiment") if isinstance(launch_payload.get("experiment"), dict) else {}
     csv_path = ROOT / str(experiment.get("csv_path")) if experiment.get("csv_path") else None
@@ -347,13 +267,13 @@ def run_real_smoke(job_id: str, job_dir: Path, launcher_config: Dict[str, Any]) 
         "direction": (launcher_config.get("extra_config") or {}).get("workbench_direction") or "aggregation_defense",
         "model": experiment.get("model") or launcher_config.get("model"),
         "dataset": experiment.get("dataset") or launcher_config.get("dataset"),
-        "source": "real_smoke",
+        "source": "full_train",
         "active_attacks": experiment.get("active_attacks", []),
         "active_defenses": experiment.get("active_defenses", []),
         "loss": final_eval.get("loss") if isinstance(final_eval, dict) else None,
-        "epochs": training_config.get("epochs") if isinstance(training_config, dict) else 1,
-        "local_epochs": training_config.get("local_epochs") if isinstance(training_config, dict) else 1,
-        "client_sampling_ratio": training_config.get("clients_sample_ratio") if isinstance(training_config, dict) else 0.05,
+        "epochs": training_config.get("epochs") if isinstance(training_config, dict) else None,
+        "local_epochs": training_config.get("local_epochs") if isinstance(training_config, dict) else None,
+        "client_sampling_ratio": training_config.get("clients_sample_ratio") if isinstance(training_config, dict) else None,
     }
     pointer = {
         "launch_payload": launch_payload,
@@ -362,13 +282,110 @@ def run_real_smoke(job_id: str, job_dir: Path, launcher_config: Dict[str, Any]) 
         "result_path": repo_relative(ROOT / str(experiment.get("result_path"))) if experiment.get("result_path") else None,
         "csv_path": repo_relative(csv_path),
         "recommend_topk_dir": repo_relative(ROOT / str(experiment.get("recommend_topk_dir"))) if experiment.get("recommend_topk_dir") else None,
+        **runtime_metadata,
+        "return_code": return_code,
     }
+    target_rank_source = csv_path.parent / "target_rank_summary.json" if csv_path else None
+    if target_rank_source and target_rank_source.exists():
+        target_rank_copy = job_dir / f"{phase}_target_rank_summary.json"
+        shutil.copyfile(target_rank_source, target_rank_copy)
+        pointer["target_rank_summary"] = repo_relative(target_rank_copy)
     warnings = list(launch_payload.get("warnings", []))
     status = "completed"
     partial_reason = None
     if warnings:
-        partial_reason = "real smoke completed with launcher warnings; defense effect is smoke-level only"
+        partial_reason = "full training completed with launcher warnings"
     return status, metrics, pointer, partial_reason
+
+
+def build_recommendation_baseline_config(job_id: str, attack_config: Dict[str, Any]) -> Dict[str, Any]:
+    baseline = copy.deepcopy(attack_config)
+    baseline["scenario"] = "baseline"
+    baseline["comment"] = f"workbench_full_train_{job_id}_baseline"
+    baseline["enabled_attacks"] = []
+    baseline["enabled_defenses"] = []
+    baseline["enabled_privacy_metrics"] = []
+    baseline["malicious_client_config"] = {
+        "enabled": False,
+        "mode": "none",
+        "ratio": 0.0,
+        "client_ids": [],
+    }
+    target_params = dict((attack_config.get("attack_params") or {}).get("target_interaction_injection") or {})
+    attack_params = copy.deepcopy(baseline.get("attack_params") or {})
+    baseline_target_params = dict(attack_params.get("target_interaction_injection") or {})
+    baseline_target_params["enabled"] = False
+    attack_params["target_interaction_injection"] = baseline_target_params
+    baseline["attack_params"] = attack_params
+    extra_config = dict(baseline.get("extra_config") or {})
+    extra_config.update(
+        {
+            "workbench_phase": "baseline",
+            "target_item_ids": list(target_params.get("target_item_ids") or []),
+            "target_item_title": target_params.get("target_item_title"),
+        }
+    )
+    baseline["extra_config"] = extra_config
+    return baseline
+
+
+def read_topk_preview(path_value: Any, limit: int = 50) -> Dict[str, Any]:
+    if not path_value:
+        return {}
+    directory = ROOT / str(path_value)
+    manifest = read_json(directory / "recommend_topk_manifest.json", {}) or {}
+    entries = list(manifest.get("topk_files") or []) if isinstance(manifest, dict) else []
+    file_name = entries[0].get("file") if entries and isinstance(entries[0], dict) else None
+    if not file_name:
+        candidates = sorted(directory.glob("*.csv"))
+        file_name = candidates[0].name if candidates else None
+    if not file_name:
+        return {}
+    csv_path = directory / str(file_name)
+    if not csv_path.exists():
+        return {}
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        row = next(csv.DictReader(handle, delimiter="\t"), None)
+    if not row:
+        return {}
+    ordered_items = [
+        row.get(f"top_{index}")
+        for index in range(limit)
+        if row.get(f"top_{index}") not in {None, ""}
+    ]
+    return {
+        "user_id": str(row.get("id") or ""),
+        "items": ordered_items,
+        "count": len(ordered_items),
+        "source_file": repo_relative(csv_path),
+    }
+
+
+def build_target_rank_comparison(
+    baseline_path_value: Any,
+    attack_path_value: Any,
+    target_item_ids: List[str],
+) -> Dict[str, Any]:
+    baseline = read_json(ROOT / str(baseline_path_value), {}) if baseline_path_value else {}
+    attack = read_json(ROOT / str(attack_path_value), {}) if attack_path_value else {}
+    target_id = str(target_item_ids[0]) if target_item_ids else ""
+    baseline_summary = ((baseline.get("target_summaries") or {}).get(target_id) or {}) if isinstance(baseline, dict) else {}
+    attack_summary = ((attack.get("target_summaries") or {}).get(target_id) or {}) if isinstance(attack, dict) else {}
+    before_rank = _number_or_raw(baseline_summary.get("average_unmasked_rank"))
+    after_rank = _number_or_raw(attack_summary.get("average_unmasked_rank"))
+    attack_records = list(attack.get("user_target_records") or []) if isinstance(attack, dict) else []
+    masked_hits = sum(1 for record in attack_records if record.get("masked_rank") is not None and int(record["masked_rank"]) <= 50)
+    evaluated_count = int(attack.get("evaluated_user_count") or len(attack_records) or 0) if isinstance(attack, dict) else 0
+    return {
+        "target_item_id": target_id or None,
+        "target_rank_before": before_rank,
+        "target_rank_after": after_rank,
+        "rank_gain": (float(before_rank) - float(after_rank)) if isinstance(before_rank, (int, float)) and isinstance(after_rank, (int, float)) else None,
+        "masked_top50_hit": masked_hits > 0,
+        "masked_top50_hit_count": masked_hits,
+        "masked_top50_hit_rate": (masked_hits / evaluated_count) if evaluated_count else None,
+        "evaluated_user_count": evaluated_count,
+    }
 
 
 def _number_or_raw(value: Any) -> Any:
@@ -380,96 +397,10 @@ def _number_or_raw(value: Any) -> Any:
         return value
 
 
-def direction_panel(direction: str) -> Tuple[str, str]:
-    if direction == "recommendation_manipulation":
-        return "target_manipulation_metrics.json", "推荐操纵证据"
-    if direction == "membership_inference":
-        return "membership_inference_panel.json", "成员推断证据"
-    if direction == "update_leakage":
-        return "update_leakage_panel.json", "更新泄露证据"
-    if direction == "aggregation_defense":
-        return "aggregation_defense_panel.json", "聚合防御证据"
-    return "frontend_summary.json", "工作台证据"
-
-
-def compact_metric_items(metrics: Dict[str, Any], keys: Iterable[str]) -> Dict[str, Any]:
-    compact: Dict[str, Any] = {}
-    for key in keys:
-        value = metrics.get(key)
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            compact[key] = value
-    return compact
-
-
-def extract_metrics(direction: str, panel: Dict[str, Any]) -> Tuple[str, Dict[str, Any], str | None]:
-    if not panel:
-        return "partial", {}, "未找到可复用的 V3 证据面板"
-    panel_status = str(panel.get("status") or "available")
-    if direction == "recommendation_manipulation":
-        metrics = compact_metric_items(
-            panel,
-            [
-                "baseline_unmasked_rank",
-                "attack_unmasked_rank",
-                "rank_gain",
-                "normalized_rank_gain",
-                "reciprocal_rank_gain",
-                "attack_topk_hit",
-                "target_manipulation_index",
-                "recommendation_jaccard",
-                "changed_user_count",
-                "changed_item_count",
-            ],
-        )
-        return "completed" if panel_status == "available" else "partial", metrics, None
-    if direction == "membership_inference":
-        metrics = compact_metric_items(
-            panel,
-            [
-                "auc",
-                "accuracy",
-                "precision",
-                "recall",
-                "f1",
-                "score_gap",
-                "member_count",
-                "non_member_count",
-                "evidence_type",
-            ],
-        )
-        return "completed" if panel.get("auc") is not None or panel.get("accuracy") is not None else "partial", metrics, None
-    if direction == "update_leakage":
-        hit = panel.get("hit_at_k") if isinstance(panel.get("hit_at_k"), dict) else {}
-        metrics = {
-            "hit_at_10": panel.get("hit_at_10", hit.get("10") or hit.get(10)),
-            "hit_at_20": panel.get("hit_at_20", hit.get("20") or hit.get(20)),
-            "hit_at_50": panel.get("hit_at_50", hit.get("50") or hit.get(50)),
-            "highest_risk_modality": panel.get("highest_risk_modality"),
-            "candidate_item_count": panel.get("candidate_item_count"),
-        }
-        return "completed" if any(value is not None for value in metrics.values()) else "partial", metrics, None
-    if direction == "aggregation_defense":
-        recovery = panel.get("recovery_rate") if isinstance(panel.get("recovery_rate"), dict) else {}
-        metrics = {
-            "defense_algorithm": panel.get("defense_algorithm"),
-            "aggregation_visibility": panel.get("aggregation_visibility"),
-            "recall_before": panel.get("recall_before"),
-            "recall_after": panel.get("recall_after"),
-            "ndcg_before": panel.get("ndcg_before"),
-            "ndcg_after": panel.get("ndcg_after"),
-            "recovery_rate_recall": recovery.get("recall"),
-            "recovery_rate_ndcg": recovery.get("ndcg"),
-            "selected_client_count": len(panel.get("selected_clients") or []),
-            "rejected_client_count": len(panel.get("rejected_clients") or []),
-        }
-        if panel_status == "configured_only":
-            return "partial", metrics, "已配置，未形成完整 benchmark"
-        return "completed" if panel_status in {"available", "completed"} else "partial", metrics, None
-    return "completed", {}, None
-
-
 def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
-    created_at = utc_now()
+    existing_status = read_json(job_dir / "status.json", {}) or {}
+    created_at = existing_status.get("created_at") or utc_now()
+    started_at = existing_status.get("started_at") or created_at
     (job_dir / "run.log").write_text("", encoding="utf-8")
     update_status(
         job_dir,
@@ -479,7 +410,7 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
             "stage": "queued",
             "progress": 0,
             "created_at": created_at,
-            "started_at": None,
+            "started_at": started_at,
             "finished_at": None,
             "error_message": None,
             "source": None,
@@ -488,157 +419,161 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
         },
     )
     append_log(job_dir, f"Workbench job {job_id} queued.")
-    time.sleep(0.15)
 
-    update_status(job_dir, {"status": "running", "stage": "preparing_config", "progress": 12, "started_at": utc_now()})
-    append_log(job_dir, "[prepare] Validating bounded smoke payload.")
+    update_status(job_dir, {"status": "running", "stage": "preparing_config", "progress": 12, "started_at": started_at})
+    append_log(job_dir, "[prepare] Validating full-training payload.")
 
     normalized, warnings, errors = normalize_input(payload)
     if errors:
         raise ValueError(";".join(str(item) for item in errors))
+    if str(normalized.get("execution_mode")) != "full_train":
+        raise ValueError("full_train_required")
+    robust_aggregators = list(normalized.get("robust_aggregators") or [])
+    if len(robust_aggregators) > 1:
+        raise ValueError("multiple_robust_aggregators_not_supported")
+    if str(normalized.get("direction")) == "aggregation_defense":
+        base_attack = str((normalized.get("defense") or {}).get("base_attack") or "")
+        if base_attack not in {"none", "malicious_update"}:
+            raise ValueError(f"aggregation_defense_invalid_base_attack:{base_attack}")
+    normalized_training = dict(normalized.get("training") or {})
+    normalized_training["top_k"] = 50
+    normalized["training"] = normalized_training
     write_json(job_dir / "config.json", normalized)
     direction = str(normalized.get("direction") or "recommendation_manipulation")
-    if can_run_real_smoke(normalized):
-        launcher_config, template_path, real_warnings = build_real_smoke_launcher_config(job_id, normalized)
-        warnings = [*warnings, *real_warnings]
-        write_json(job_dir / "launcher_config.json", launcher_config)
-        append_log(job_dir, f"[prepare] Wrote real smoke launcher_config.json from {repo_relative(template_path)}.")
-        update_status(
-            job_dir,
-            {
-                "stage": "preparing_config",
-                "progress": 24,
-                "direction": direction,
-                "scenario_id": normalized.get("scenario_id"),
-                "source": "real_smoke",
-                "warnings": warnings,
-                "errors": [],
-            },
-        )
-        final_status, metrics, pointer_extra, partial_reason = run_real_smoke(job_id, job_dir, launcher_config)
-        launcher_warnings = []
-        launch_payload = pointer_extra.get("launch_payload") if isinstance(pointer_extra, dict) else {}
-        if isinstance(launch_payload, dict):
-            launcher_warnings = [str(item) for item in launch_payload.get("warnings", [])]
-        all_warnings = [*warnings, *launcher_warnings]
-
-        update_status(job_dir, {"stage": "exporting_artifacts", "progress": 86, "warnings": all_warnings})
-        append_log(job_dir, "[export] Writing real smoke metrics_summary and result_pointer.")
-        result_dir = pointer_extra.get("result_dir") if isinstance(pointer_extra, dict) else None
-        result_pointer = {
-            "job_id": job_id,
-            "status": final_status,
-            "source": "real_smoke",
-            "config": "config.json",
-            "launcher_config": "launcher_config.json",
-            "status_file": "status.json",
-            "metrics_summary": "metrics_summary.json",
-            "log": "run.log",
-            "result_dir": result_dir,
-            "artifact_dir": None,
-            "showcase_scenario_id": normalized.get("scenario_id"),
-            **(pointer_extra if isinstance(pointer_extra, dict) else {}),
-        }
-        metrics_summary = {
-            "job_id": job_id,
-            "status": final_status,
-            "source": "real_smoke",
-            "direction": direction,
-            "scenario_id": normalized.get("scenario_id"),
-            "model": metrics.get("model"),
-            "dataset": metrics.get("dataset"),
-            "metrics": metrics,
-            "warnings": all_warnings,
-            "message": "真实受限 smoke job 已执行；该结果只代表 1 epoch 小规模链路验证。",
-            "partial_reason": partial_reason,
-            "runtime_limits": launcher_config.get("extra_config", {}).get("runtime_limits"),
-        }
-        write_json(job_dir / "result_pointer.json", result_pointer)
-        write_json(job_dir / "metrics_summary.json", metrics_summary)
-        finished_at = utc_now()
-        update_status(
-            job_dir,
-            {
-                "status": final_status,
-                "stage": final_status,
-                "progress": 100,
-                "finished_at": finished_at,
-                "error_message": partial_reason if final_status in {"partial", "failed"} else None,
-                "result_dir": result_dir,
-                "artifact_dir": None,
-                "source": "real_smoke",
-                "warnings": all_warnings,
-            },
-        )
-        append_log(job_dir, f"[done] status={final_status}; source=real_smoke; result_dir={result_dir}.")
-        if partial_reason:
-            append_log(job_dir, f"[boundary] {partial_reason}.")
-        return 0 if final_status in {"completed", "partial"} else 1
-
-    launcher_config = build_launcher_config(normalized, payload)
+    launcher_config = build_full_train_launcher_config(job_id, normalized)
     write_json(job_dir / "launcher_config.json", launcher_config)
-    append_log(job_dir, "[prepare] Wrote config.json and launcher_config.json with runtime limits.")
-    time.sleep(0.2)
-    fallback_source = "probe_smoke" if str(normalized.get("execution_mode")) == "probe_smoke" else "existing_artifact"
-
-    scenario_id = str(normalized.get("scenario_id") or DEFAULT_SCENARIO_ID)
-    artifact_dir = (SHOWCASE_ROOT / scenario_id).resolve()
-    if not artifact_dir.exists():
-        artifact_dir = (SHOWCASE_ROOT / DEFAULT_SCENARIO_ID).resolve()
-        scenario_id = DEFAULT_SCENARIO_ID
-    if SHOWCASE_ROOT.resolve() not in [artifact_dir, *artifact_dir.parents]:
-        raise ValueError("artifact_path_outside_showcase_root")
+    append_log(job_dir, "[prepare] Wrote launcher_config.json with submitted training parameters.")
 
     update_status(
         job_dir,
         {
-            "stage": "running",
-            "progress": 45,
+            "stage": "preparing_config",
+            "progress": 24,
             "direction": direction,
-            "scenario_id": scenario_id,
-            "source": fallback_source,
-            "artifact_dir": repo_relative(artifact_dir),
+            "scenario_id": normalized.get("scenario_id"),
+            "source": "full_train",
             "warnings": warnings,
             "errors": [],
         },
     )
-    append_log(job_dir, f"[run] Direction={direction}; source={fallback_source}; using bounded exported evidence/probe envelope.")
-    append_log(job_dir, "[run] No arbitrary shell command or long training is executed by this runner.")
-    time.sleep(0.25)
+    launcher_warnings: List[str] = []
+    if direction == "recommendation_manipulation":
+        baseline_config = build_recommendation_baseline_config(job_id, launcher_config)
+        write_json(job_dir / "baseline_launcher_config.json", baseline_config)
+        append_log(job_dir, "[prepare] Wrote baseline_launcher_config.json for real baseline training.")
+        baseline_status, baseline_metrics, baseline_pointer, baseline_reason = run_full_train(
+            job_id,
+            job_dir,
+            baseline_config,
+            config_name="baseline_launcher_config.json",
+            phase="baseline_training",
+            progress=32,
+        )
+        baseline_launch_payload = baseline_pointer.get("launch_payload") if isinstance(baseline_pointer, dict) else {}
+        if isinstance(baseline_launch_payload, dict):
+            launcher_warnings.extend(str(item) for item in baseline_launch_payload.get("warnings", []))
+        if baseline_status == "failed":
+            final_status = "failed"
+            metrics = baseline_metrics
+            pointer_extra = {
+                "baseline": baseline_pointer,
+                "attack": None,
+                "result_dir": baseline_pointer.get("result_dir"),
+                "launch_payload": baseline_launch_payload,
+            }
+            partial_reason = baseline_reason
+        else:
+            attack_extra = dict(launcher_config.get("extra_config") or {})
+            attack_extra["workbench_phase"] = "attack"
+            launcher_config["extra_config"] = attack_extra
+            write_json(job_dir / "launcher_config.json", launcher_config)
+            append_log(job_dir, "[prepare] Starting real attack training after baseline completed.")
+            attack_status, attack_metrics, attack_pointer, attack_reason = run_full_train(
+                job_id,
+                job_dir,
+                launcher_config,
+                config_name="launcher_config.json",
+                phase="attack_training",
+                progress=58,
+            )
+            attack_launch_payload = attack_pointer.get("launch_payload") if isinstance(attack_pointer, dict) else {}
+            if isinstance(attack_launch_payload, dict):
+                launcher_warnings.extend(str(item) for item in attack_launch_payload.get("warnings", []))
+            target_params = dict((launcher_config.get("attack_params") or {}).get("target_interaction_injection") or {})
+            target_item_ids = [str(item) for item in target_params.get("target_item_ids") or []]
+            target_comparison = build_target_rank_comparison(
+                baseline_pointer.get("target_rank_summary"),
+                attack_pointer.get("target_rank_summary"),
+                target_item_ids,
+            )
+            baseline_top50 = read_topk_preview(baseline_pointer.get("recommend_topk_dir"))
+            attack_top50 = read_topk_preview(attack_pointer.get("recommend_topk_dir"))
+            final_status = attack_status
+            metrics = {
+                **attack_metrics,
+                "baseline_loss": baseline_metrics.get("loss"),
+                "baseline_recall_at_50": baseline_metrics.get("recall_at_50"),
+                "baseline_ndcg_at_50": baseline_metrics.get("ndcg_at_50"),
+                "attack_loss": attack_metrics.get("loss"),
+                "attack_recall_at_50": attack_metrics.get("recall_at_50"),
+                "attack_ndcg_at_50": attack_metrics.get("ndcg_at_50"),
+                **target_comparison,
+                "baseline_top50": baseline_top50,
+                "attack_top50": attack_top50,
+            }
+            pointer_extra = {
+                **attack_pointer,
+                "baseline": baseline_pointer,
+                "attack": attack_pointer,
+                "baseline_recommend_topk_dir": baseline_pointer.get("recommend_topk_dir"),
+                "attack_recommend_topk_dir": attack_pointer.get("recommend_topk_dir"),
+                "baseline_target_rank_summary": baseline_pointer.get("target_rank_summary"),
+                "attack_target_rank_summary": attack_pointer.get("target_rank_summary"),
+                "target_rank_comparison": target_comparison,
+                "recommendation_previews": {
+                    "baseline": baseline_top50,
+                    "attack": attack_top50,
+                },
+            }
+            partial_reason = attack_reason or baseline_reason
+    else:
+        final_status, metrics, pointer_extra, partial_reason = run_full_train(job_id, job_dir, launcher_config)
+        launch_payload = pointer_extra.get("launch_payload") if isinstance(pointer_extra, dict) else {}
+        if isinstance(launch_payload, dict):
+            launcher_warnings.extend(str(item) for item in launch_payload.get("warnings", []))
+    launcher_warnings = list(dict.fromkeys(launcher_warnings))
+    all_warnings = [*warnings, *launcher_warnings]
 
-    panel_file, evidence_label = direction_panel(direction)
-    panel_path = artifact_dir / panel_file
-    panel = read_json(panel_path, {}) or {}
-    final_status, metrics, partial_reason = extract_metrics(direction, panel)
-
-    update_status(job_dir, {"stage": "exporting_artifacts", "progress": 78})
-    append_log(job_dir, f"[export] Reading {evidence_label} from {repo_relative(panel_path) or panel_file}.")
-    time.sleep(0.2)
+    update_status(job_dir, {"stage": "exporting_artifacts", "progress": 86, "warnings": all_warnings})
+    append_log(job_dir, "[export] Writing full-training metrics_summary and result_pointer.")
+    result_dir = pointer_extra.get("result_dir") if isinstance(pointer_extra, dict) else None
 
     result_pointer = {
         "job_id": job_id,
         "status": final_status,
-        "source": fallback_source,
+        "source": "full_train",
         "config": "config.json",
         "launcher_config": "launcher_config.json",
         "status_file": "status.json",
         "metrics_summary": "metrics_summary.json",
         "log": "run.log",
-        "result_dir": None,
-        "artifact_dir": repo_relative(artifact_dir),
-        "showcase_scenario_id": scenario_id,
-        "generated_panels": {direction: repo_relative(panel_path)},
+        "result_dir": result_dir,
+        "artifact_dir": None,
+        "showcase_scenario_id": normalized.get("scenario_id"),
+        **(pointer_extra if isinstance(pointer_extra, dict) else {}),
     }
     metrics_summary = {
         "job_id": job_id,
         "status": final_status,
-        "source": fallback_source,
+        "source": "full_train",
         "direction": direction,
-        "scenario_id": scenario_id,
+        "scenario_id": normalized.get("scenario_id"),
+        "model": metrics.get("model"),
+        "dataset": metrics.get("dataset"),
         "metrics": metrics,
-        "message": "运行轻量 probe，复用导出的安全证据生成结果摘要；不是完整训练 benchmark。" if fallback_source == "probe_smoke" else "复用已导出的安全证据；不是本次新训练生成的完整结果。",
+        "warnings": all_warnings,
+        "message": "真实全量训练任务已执行，训练参数来自工作台提交配置。",
         "partial_reason": partial_reason,
-        "runtime_limits": launcher_config.get("workbench_runtime_limits"),
     }
     write_json(job_dir / "result_pointer.json", result_pointer)
     write_json(job_dir / "metrics_summary.json", metrics_summary)
@@ -651,20 +586,22 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
             "stage": final_status,
             "progress": 100,
             "finished_at": finished_at,
-            "error_message": partial_reason,
-            "result_dir": None,
-            "artifact_dir": repo_relative(artifact_dir),
-            "source": fallback_source,
+            "error_message": partial_reason if final_status in {"partial", "failed"} else None,
+            "message": "真实训练已完成。" if final_status == "completed" else "真实训练执行失败。",
+            "result_dir": result_dir,
+            "artifact_dir": None,
+            "source": "full_train",
+            "warnings": all_warnings,
         },
     )
-    append_log(job_dir, f"[done] status={final_status}; source={fallback_source}.")
+    append_log(job_dir, f"[done] status={final_status}; source=full_train; result_dir={result_dir}.")
     if partial_reason:
-        append_log(job_dir, f"[boundary] {partial_reason}.")
+        append_log(job_dir, f"[warning] {partial_reason}.")
     return 0 if final_status in {"completed", "partial"} else 1
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a bounded FedVLR workbench smoke job.")
+    parser = argparse.ArgumentParser(description="Run a FedVLR workbench full-training job.")
     parser.add_argument("--job-id", required=True, help="Safe workbench job id.")
     parser.add_argument("--payload-file", help="Raw workbench payload JSON file.")
     parser.add_argument("--config", help="Normalized workbench config JSON file.")
@@ -705,7 +642,7 @@ def main() -> int:
                 "status": "failed",
                 "source": None,
                 "metrics": {},
-                "message": "受限 smoke job 执行失败。",
+                "message": "真实全量训练任务执行失败。",
                 "error_message": str(exc),
             },
         )

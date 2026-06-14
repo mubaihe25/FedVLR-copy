@@ -190,7 +190,14 @@ class FusionLayer(nn.Module):
     首先将各模态特征映射到相同的潜在空间，然后使用指定的融合模块进行融合。
     """
 
-    def __init__(self, in_dim: int, fusion_module: str = 'moe', latent_dim: int = 128):
+    def __init__(
+        self,
+        in_dim: int,
+        fusion_module: str = 'moe',
+        latent_dim: int = 128,
+        txt_in_dim: int | None = None,
+        vis_in_dim: int | None = None,
+    ):
         """初始化融合层
         
         Args:
@@ -202,8 +209,8 @@ class FusionLayer(nn.Module):
 
         # 特征映射层，将各模态特征映射到相同维度
         self.id_affine = nn.Linear(in_dim, latent_dim)
-        self.txt_affine = nn.Linear(in_dim, latent_dim)
-        self.vis_affine = nn.Linear(in_dim, latent_dim)
+        self.txt_affine = nn.Linear(txt_in_dim or in_dim, latent_dim)
+        self.vis_affine = nn.Linear(vis_in_dim or in_dim, latent_dim)
         
         # 特征归一化层
         self.id_norm = nn.LayerNorm(latent_dim)
