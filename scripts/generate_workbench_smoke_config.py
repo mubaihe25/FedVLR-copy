@@ -532,6 +532,18 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
     if candidate_k not in set(bounds.get("candidate_k_values", [10, 20, 50])):
         warnings.append("candidate_k_clamped_to_50")
         candidate_k = 50
+    mia_evidence_source = str(payload.get("mia_evidence_source", payload.get("evidenceSource")) or "auto")
+    if mia_evidence_source not in {"rank", "unmasked rank", "checkpoint score", "auto"}:
+        add_error("mia_evidence_source", f"mia_evidence_source_invalid_option:{mia_evidence_source}")
+    label_source = str(payload.get("label_source", payload.get("labelSource")) or defaults.get("label_source", "membership_labels"))
+    if label_source not in {"membership labels", "membership_labels", "scenario labels", "scenario_labels", "auto labels", "auto_labels", "auto"}:
+        add_error("label_source", f"label_source_invalid_option:{label_source}")
+    threshold_strategy = str(payload.get("threshold_strategy", payload.get("thresholdStrategy")) or defaults.get("threshold_strategy", "auto"))
+    if threshold_strategy not in {"auto", "median", "fixed"}:
+        add_error("threshold_strategy", f"threshold_strategy_invalid_option:{threshold_strategy}")
+    mia_model = str(payload.get("mia_model", payload.get("miaModel")) or "rank_proxy")
+    if mia_model not in {"threshold", "logistic_probe", "rank_proxy"}:
+        add_error("mia_model", f"mia_model_invalid_option:{mia_model}")
 
     robust_defense_names = {
         "Krum": "krum",
@@ -606,10 +618,10 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
             "target_rank_selector": target_rank_selector,
         },
         "privacy": {
-            "mia_evidence_source": str(payload.get("mia_evidence_source", payload.get("evidenceSource")) or "auto"),
-            "label_source": str(payload.get("label_source", payload.get("labelSource")) or defaults.get("label_source", "membership_labels")),
-            "threshold_strategy": str(payload.get("threshold_strategy", payload.get("thresholdStrategy")) or defaults.get("threshold_strategy", "auto")),
-            "mia_model": str(payload.get("mia_model", payload.get("miaModel")) or "rank_proxy"),
+            "mia_evidence_source": mia_evidence_source,
+            "label_source": label_source,
+            "threshold_strategy": threshold_strategy,
+            "mia_model": mia_model,
             "member_nonmember_ratio": as_float(payload.get("member_nonmember_ratio", payload.get("memberNonmemberRatio")), 1.0),
             "export_pair_scores": as_bool(payload.get("export_pair_scores", payload.get("exportPairScores")), defaults.get("export_pair_scores", True)),
             "membership_sample_count": int(
@@ -742,8 +754,12 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
             "privacy_params": {
                 "membership_inference_probe": {
                     "enabled": "membership_inference_probe" in enabled_privacy,
-                    "evidence_source": str(payload.get("mia_evidence_source", payload.get("evidenceSource")) or "auto"),
-                    "mia_model": str(payload.get("mia_model", payload.get("miaModel")) or "rank_proxy"),
+                    "evidence_source": mia_evidence_source,
+                    "label_source": label_source,
+                    "threshold_strategy": threshold_strategy,
+                    "mia_model": mia_model,
+                    "member_nonmember_ratio": as_float(payload.get("member_nonmember_ratio", payload.get("memberNonmemberRatio")), 1.0),
+                    "export_pair_scores": as_bool(payload.get("export_pair_scores", payload.get("exportPairScores")), defaults.get("export_pair_scores", True)),
                     "sample_count": int(
                         clamp_number(
                             as_int(payload.get("membership_sample_count", payload.get("membershipSampleCount")), bounds.get("default_membership_sample_count", 200)),
@@ -757,7 +773,10 @@ def normalize_workbench_payload(payload: Dict[str, Any]) -> Tuple[Dict[str, Any]
                     "candidate_k": candidate_k,
                     "candidate_pool_size": as_int(payload.get("candidate_pool_size", payload.get("candidatePoolSize")), 500),
                     "risk_modality": str(payload.get("risk_modality", payload.get("riskModality")) or "item embedding"),
+                    "update_input_source": str(payload.get("update_input_source", payload.get("updateInputSource")) or "client_update"),
                     "similarity_method": str(payload.get("similarity_method", payload.get("similarityMethod")) or "cosine"),
+                    "audit_client_count": as_int(payload.get("client_count", payload.get("clientCount")), 5),
+                    "export_candidate_evidence": as_bool(payload.get("export_reconstruction", payload.get("exportReconstruction")), defaults.get("export_reconstruction", True)),
                 },
             },
         },

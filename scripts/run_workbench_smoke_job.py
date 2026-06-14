@@ -19,8 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_ROOT = ROOT / "outputs" / "workbench_jobs"
 SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import generate_workbench_smoke_config as generator  # noqa: E402
+import workbench_result as result_builder  # noqa: E402
 
 
 def utc_now() -> str:
@@ -329,6 +331,44 @@ def build_recommendation_baseline_config(job_id: str, attack_config: Dict[str, A
     return baseline
 
 
+def build_phase_config(
+    job_id: str,
+    source_config: Dict[str, Any],
+    phase: str,
+    *,
+    include_attacks: bool,
+    include_defenses: bool,
+    include_privacy: bool = False,
+) -> Dict[str, Any]:
+    config = copy.deepcopy(source_config)
+    config["scenario"] = (
+        "attack_and_defense"
+        if include_attacks and include_defenses
+        else "attack_only"
+        if include_attacks
+        else "defense_only"
+        if include_defenses
+        else "baseline"
+    )
+    config["comment"] = f"workbench_full_train_{job_id}_{phase}"
+    if not include_attacks:
+        config["enabled_attacks"] = []
+        config["malicious_client_config"] = {
+            "enabled": False,
+            "mode": "none",
+            "ratio": 0.0,
+            "client_ids": [],
+        }
+    if not include_defenses:
+        config["enabled_defenses"] = []
+    if not include_privacy:
+        config["enabled_privacy_metrics"] = []
+    extra_config = dict(config.get("extra_config") or {})
+    extra_config["workbench_phase"] = phase
+    config["extra_config"] = extra_config
+    return config
+
+
 def read_topk_preview(path_value: Any, limit: int = 50) -> Dict[str, Any]:
     if not path_value:
         return {}
@@ -419,8 +459,7 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
         },
     )
     append_log(job_dir, f"Workbench job {job_id} queued.")
-
-    update_status(job_dir, {"status": "running", "stage": "preparing_config", "progress": 12, "started_at": started_at})
+    update_status(job_dir, {"status": "running", "stage": "prepare", "progress": 10, "started_at": started_at})
     append_log(job_dir, "[prepare] Validating full-training payload.")
 
     normalized, warnings, errors = normalize_input(payload)
@@ -431,24 +470,21 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
     robust_aggregators = list(normalized.get("robust_aggregators") or [])
     if len(robust_aggregators) > 1:
         raise ValueError("multiple_robust_aggregators_not_supported")
-    if str(normalized.get("direction")) == "aggregation_defense":
-        base_attack = str((normalized.get("defense") or {}).get("base_attack") or "")
-        if base_attack not in {"none", "malicious_update"}:
-            raise ValueError(f"aggregation_defense_invalid_base_attack:{base_attack}")
+    direction = str(normalized.get("direction") or "recommendation_manipulation")
+    base_attack = str((normalized.get("defense") or {}).get("base_attack") or "none")
+    if direction == "aggregation_defense" and base_attack not in {"none", "malicious_update"}:
+        raise ValueError(f"aggregation_defense_invalid_base_attack:{base_attack}")
     normalized_training = dict(normalized.get("training") or {})
     normalized_training["top_k"] = 50
     normalized["training"] = normalized_training
     write_json(job_dir / "config.json", normalized)
-    direction = str(normalized.get("direction") or "recommendation_manipulation")
     launcher_config = build_full_train_launcher_config(job_id, normalized)
     write_json(job_dir / "launcher_config.json", launcher_config)
-    append_log(job_dir, "[prepare] Wrote launcher_config.json with submitted training parameters.")
-
     update_status(
         job_dir,
         {
-            "stage": "preparing_config",
-            "progress": 24,
+            "stage": "prepare",
+            "progress": 20,
             "direction": direction,
             "scenario_id": normalized.get("scenario_id"),
             "source": "full_train",
@@ -456,98 +492,218 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
             "errors": [],
         },
     )
+    append_log(job_dir, "[prepare] Wrote launcher_config.json with submitted training parameters.")
+
     launcher_warnings: List[str] = []
-    if direction == "recommendation_manipulation":
-        baseline_config = build_recommendation_baseline_config(job_id, launcher_config)
-        write_json(job_dir / "baseline_launcher_config.json", baseline_config)
-        append_log(job_dir, "[prepare] Wrote baseline_launcher_config.json for real baseline training.")
-        baseline_status, baseline_metrics, baseline_pointer, baseline_reason = run_full_train(
-            job_id,
-            job_dir,
-            baseline_config,
-            config_name="baseline_launcher_config.json",
-            phase="baseline_training",
-            progress=32,
-        )
-        baseline_launch_payload = baseline_pointer.get("launch_payload") if isinstance(baseline_pointer, dict) else {}
-        if isinstance(baseline_launch_payload, dict):
-            launcher_warnings.extend(str(item) for item in baseline_launch_payload.get("warnings", []))
-        if baseline_status == "failed":
-            final_status = "failed"
-            metrics = baseline_metrics
-            pointer_extra = {
-                "baseline": baseline_pointer,
-                "attack": None,
-                "result_dir": baseline_pointer.get("result_dir"),
-                "launch_payload": baseline_launch_payload,
-            }
-            partial_reason = baseline_reason
-        else:
-            attack_extra = dict(launcher_config.get("extra_config") or {})
-            attack_extra["workbench_phase"] = "attack"
-            launcher_config["extra_config"] = attack_extra
-            write_json(job_dir / "launcher_config.json", launcher_config)
-            append_log(job_dir, "[prepare] Starting real attack training after baseline completed.")
-            attack_status, attack_metrics, attack_pointer, attack_reason = run_full_train(
-                job_id,
-                job_dir,
-                launcher_config,
-                config_name="launcher_config.json",
-                phase="attack_training",
-                progress=58,
-            )
-            attack_launch_payload = attack_pointer.get("launch_payload") if isinstance(attack_pointer, dict) else {}
-            if isinstance(attack_launch_payload, dict):
-                launcher_warnings.extend(str(item) for item in attack_launch_payload.get("warnings", []))
-            target_params = dict((launcher_config.get("attack_params") or {}).get("target_interaction_injection") or {})
-            target_item_ids = [str(item) for item in target_params.get("target_item_ids") or []]
-            target_comparison = build_target_rank_comparison(
-                baseline_pointer.get("target_rank_summary"),
-                attack_pointer.get("target_rank_summary"),
-                target_item_ids,
-            )
-            baseline_top50 = read_topk_preview(baseline_pointer.get("recommend_topk_dir"))
-            attack_top50 = read_topk_preview(attack_pointer.get("recommend_topk_dir"))
-            final_status = attack_status
-            metrics = {
-                **attack_metrics,
-                "baseline_loss": baseline_metrics.get("loss"),
-                "baseline_recall_at_50": baseline_metrics.get("recall_at_50"),
-                "baseline_ndcg_at_50": baseline_metrics.get("ndcg_at_50"),
-                "attack_loss": attack_metrics.get("loss"),
-                "attack_recall_at_50": attack_metrics.get("recall_at_50"),
-                "attack_ndcg_at_50": attack_metrics.get("ndcg_at_50"),
-                **target_comparison,
-                "baseline_top50": baseline_top50,
-                "attack_top50": attack_top50,
-            }
-            pointer_extra = {
-                **attack_pointer,
-                "baseline": baseline_pointer,
-                "attack": attack_pointer,
-                "baseline_recommend_topk_dir": baseline_pointer.get("recommend_topk_dir"),
-                "attack_recommend_topk_dir": attack_pointer.get("recommend_topk_dir"),
-                "baseline_target_rank_summary": baseline_pointer.get("target_rank_summary"),
-                "attack_target_rank_summary": attack_pointer.get("target_rank_summary"),
-                "target_rank_comparison": target_comparison,
-                "recommendation_previews": {
-                    "baseline": baseline_top50,
-                    "attack": attack_top50,
-                },
-            }
-            partial_reason = attack_reason or baseline_reason
-    else:
-        final_status, metrics, pointer_extra, partial_reason = run_full_train(job_id, job_dir, launcher_config)
-        launch_payload = pointer_extra.get("launch_payload") if isinstance(pointer_extra, dict) else {}
+    missing_evidence: List[str] = []
+    result_pointers: Dict[str, Any] = {}
+    direction_result: Dict[str, Any] = {}
+    terminal_metrics: Dict[str, Any] = {}
+    terminal_pointer: Dict[str, Any] = {}
+    final_status = "completed"
+
+    def collect_launch_warnings(pointer: Dict[str, Any]) -> None:
+        launch_payload = pointer.get("launch_payload") if isinstance(pointer, dict) else {}
         if isinstance(launch_payload, dict):
             launcher_warnings.extend(str(item) for item in launch_payload.get("warnings", []))
+
+    def run_phase(config: Dict[str, Any], name: str, progress: int) -> Tuple[str, Dict[str, Any], Dict[str, Any], str | None]:
+        config_name = f"{name}_launcher_config.json"
+        write_json(job_dir / config_name, config)
+        append_log(job_dir, f"[prepare] Wrote {config_name}.")
+        phase_result = run_full_train(
+            job_id,
+            job_dir,
+            config,
+            config_name=config_name,
+            phase=name,
+            progress=progress,
+        )
+        collect_launch_warnings(phase_result[2])
+        return phase_result
+
+    if direction == "recommendation_manipulation":
+        baseline_config = build_recommendation_baseline_config(job_id, launcher_config)
+        baseline_status, baseline_metrics, baseline_pointer, baseline_reason = run_phase(baseline_config, "baseline_training", 28)
+        if baseline_status == "failed":
+            final_status = "failed"
+            terminal_pointer = baseline_pointer
+            terminal_metrics = baseline_metrics
+            missing_evidence.append(baseline_reason or "baseline_training_failed")
+        else:
+            attack_config = build_phase_config(job_id, launcher_config, "attack", include_attacks=True, include_defenses=False)
+            attack_status, attack_metrics, attack_pointer, attack_reason = run_phase(attack_config, "attack_training", 50)
+            defense_metrics: Dict[str, Any] | None = None
+            defense_pointer: Dict[str, Any] | None = None
+            defense_status = "completed"
+            if attack_status != "failed" and list(launcher_config.get("enabled_defenses") or []):
+                defense_config = build_phase_config(job_id, launcher_config, "defense", include_attacks=True, include_defenses=True)
+                defense_status, defense_metrics, defense_pointer, defense_reason = run_phase(defense_config, "defense_training", 68)
+                if defense_reason:
+                    launcher_warnings.append(defense_reason)
+            if attack_status == "failed" or defense_status == "failed":
+                final_status = "failed"
+                terminal_pointer = defense_pointer or attack_pointer
+                terminal_metrics = defense_metrics or attack_metrics
+                missing_evidence.append(attack_reason or "attack_or_defense_training_failed")
+            else:
+                target_params = dict((launcher_config.get("attack_params") or {}).get("target_interaction_injection") or {})
+                target_item_ids = [str(item) for item in target_params.get("target_item_ids") or []]
+                target_comparison = build_target_rank_comparison(
+                    baseline_pointer.get("target_rank_summary"),
+                    attack_pointer.get("target_rank_summary"),
+                    target_item_ids,
+                )
+                baseline_preview = read_topk_preview(baseline_pointer.get("recommend_topk_dir"))
+                attack_preview = read_topk_preview(attack_pointer.get("recommend_topk_dir"))
+                defense_preview = read_topk_preview(defense_pointer.get("recommend_topk_dir")) if defense_pointer else None
+                direction_result, missing = result_builder.build_recommendation_result(
+                    normalized,
+                    baseline_metrics,
+                    attack_metrics,
+                    defense_metrics,
+                    target_comparison,
+                    baseline_preview,
+                    attack_preview,
+                    defense_preview,
+                )
+                missing_evidence.extend(missing)
+                result_pointers.update({"baseline": baseline_pointer, "attack": attack_pointer, "defense": defense_pointer})
+                terminal_metrics = defense_metrics or attack_metrics
+                terminal_pointer = defense_pointer or attack_pointer
+    elif direction in {"membership_inference", "update_leakage"}:
+        phase_name = "privacy_audit" if direction == "membership_inference" else "leakage_audit"
+        run_status, run_metrics, run_pointer, run_reason = run_phase(launcher_config, phase_name, 48)
+        terminal_metrics, terminal_pointer = run_metrics, run_pointer
+        result_pointers["training"] = run_pointer
+        if run_status == "failed":
+            final_status = "failed"
+            missing_evidence.append(run_reason or f"{phase_name}_failed")
+        elif direction == "membership_inference":
+            append_log(job_dir, "[evaluation] Generating current-job membership labels and pair scores.")
+            direction_result, direction_warnings, missing, detail_pointers = result_builder.build_membership_result(
+                job_id, job_dir, normalized, run_pointer
+            )
+            launcher_warnings.extend(direction_warnings)
+            missing_evidence.extend(missing)
+            result_pointers.update(detail_pointers)
+        else:
+            append_log(job_dir, "[evaluation] Reading current-job interaction reconstruction evidence.")
+            direction_result, direction_warnings, missing = result_builder.build_update_leakage_result(normalized, run_pointer)
+            launcher_warnings.extend(direction_warnings)
+            missing_evidence.extend(missing)
+            if bool((normalized.get("privacy") or {}).get("export_reconstruction", True)) and direction_result:
+                evidence_path = job_dir / "update_leakage_candidate_evidence.json"
+                write_json(evidence_path, direction_result)
+                result_pointers["update_leakage_candidate_evidence"] = repo_relative(evidence_path)
+    elif direction == "aggregation_defense":
+        baseline_config = build_phase_config(job_id, launcher_config, "baseline", include_attacks=False, include_defenses=False)
+        baseline_status, baseline_metrics, baseline_pointer, baseline_reason = run_phase(baseline_config, "baseline_training", 28)
+        attacked_metrics: Dict[str, Any] | None = None
+        attacked_pointer: Dict[str, Any] | None = None
+        defended_metrics: Dict[str, Any] | None = None
+        defended_pointer: Dict[str, Any] | None = None
+        phase_failed = baseline_status == "failed"
+        if not phase_failed and base_attack == "malicious_update":
+            attack_config = build_phase_config(job_id, launcher_config, "attack", include_attacks=True, include_defenses=False)
+            attack_status, attacked_metrics, attacked_pointer, attack_reason = run_phase(attack_config, "attack_training", 48)
+            phase_failed = attack_status == "failed"
+            if attack_reason and phase_failed:
+                missing_evidence.append(attack_reason)
+        has_defense = bool(list(launcher_config.get("enabled_defenses") or []))
+        if not phase_failed and has_defense:
+            defense_config = build_phase_config(
+                job_id,
+                launcher_config,
+                "defense",
+                include_attacks=base_attack == "malicious_update",
+                include_defenses=True,
+            )
+            defense_status, defended_metrics, defended_pointer, defense_reason = run_phase(defense_config, "defense_training", 68)
+            phase_failed = defense_status == "failed"
+            if defense_reason and phase_failed:
+                missing_evidence.append(defense_reason)
+        elif not phase_failed and base_attack == "none":
+            defended_metrics, defended_pointer = baseline_metrics, baseline_pointer
+        if phase_failed:
+            final_status = "failed"
+            missing_evidence.append(baseline_reason or "aggregation_phase_failed")
+        else:
+            append_log(job_dir, "[evaluation] Building baseline/attacked/defended comparison and round curves.")
+            direction_result, missing = result_builder.build_aggregation_result(
+                job_id,
+                normalized,
+                baseline_metrics,
+                baseline_pointer,
+                attacked_metrics,
+                attacked_pointer,
+                defended_metrics,
+                defended_pointer,
+            )
+            missing_evidence.extend(missing)
+        result_pointers.update({"baseline": baseline_pointer, "attack": attacked_pointer, "defense": defended_pointer})
+        terminal_metrics = defended_metrics or attacked_metrics or baseline_metrics
+        terminal_pointer = defended_pointer or attacked_pointer or baseline_pointer
+    else:
+        raise ValueError(f"unknown_direction:{direction}")
+
     launcher_warnings = list(dict.fromkeys(launcher_warnings))
-    all_warnings = [*warnings, *launcher_warnings]
+    all_warnings = list(dict.fromkeys([*warnings, *launcher_warnings]))
+    missing_evidence = list(dict.fromkeys(str(item) for item in missing_evidence if item))
+    if final_status != "failed" and missing_evidence:
+        final_status = "partial"
+    partial_reason = "; ".join(missing_evidence) if missing_evidence else None
 
-    update_status(job_dir, {"stage": "exporting_artifacts", "progress": 86, "warnings": all_warnings})
-    append_log(job_dir, "[export] Writing full-training metrics_summary and result_pointer.")
-    result_dir = pointer_extra.get("result_dir") if isinstance(pointer_extra, dict) else None
-
+    update_status(job_dir, {"stage": "export", "progress": 88, "warnings": all_warnings})
+    append_log(job_dir, "[export] Writing workbench-result-v2 metrics_summary and result_pointer.")
+    finished_at = utc_now()
+    training = result_builder.training_block(terminal_metrics, terminal_pointer, job_id)
+    compatibility_metrics = result_builder.compatibility_metrics(direction, training, direction_result)
+    compatibility_metrics.update(
+        {
+            "direction": direction,
+            "model": normalized.get("model"),
+            "dataset": normalized.get("dataset"),
+            "source": "full_train",
+            "active_attacks": list((launcher_config.get("enabled_attacks") or [])),
+            "active_defenses": list((launcher_config.get("enabled_defenses") or [])),
+        }
+    )
+    config_summary = {
+        "training": normalized.get("training", {}),
+        "attack": normalized.get("attack", {}),
+        "privacy": normalized.get("privacy", {}),
+        "defense": normalized.get("defense", {}),
+        "aggregation_mode": normalized.get("aggregation_mode"),
+        "robust_aggregators": normalized.get("robust_aggregators", []),
+        "dp_noise_enabled": normalized.get("dp_noise_enabled"),
+        "update_perturbation": {
+            "dp_noise_std": normalized.get("dp_noise_std"),
+            "noise_multiplier": normalized.get("noise_multiplier"),
+            "max_grad_norm": normalized.get("max_grad_norm"),
+            "target_delta": normalized.get("target_delta"),
+            "dp_seed": normalized.get("dp_seed"),
+        },
+    }
+    metrics_summary = {
+        "schema_version": "workbench-result-v2",
+        "job_id": job_id,
+        "direction": direction,
+        "dataset": normalized.get("dataset"),
+        "model": normalized.get("model"),
+        "status": final_status,
+        "source": "full_train",
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "config_summary": config_summary,
+        "training": training,
+        "direction_result": direction_result,
+        "metrics": compatibility_metrics,
+        "warnings": all_warnings,
+        "missing_evidence": missing_evidence,
+        "partial_reason": partial_reason,
+    }
+    result_dir = terminal_pointer.get("result_dir") if isinstance(terminal_pointer, dict) else None
     result_pointer = {
         "job_id": job_id,
         "status": final_status,
@@ -560,25 +716,10 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
         "result_dir": result_dir,
         "artifact_dir": None,
         "showcase_scenario_id": normalized.get("scenario_id"),
-        **(pointer_extra if isinstance(pointer_extra, dict) else {}),
-    }
-    metrics_summary = {
-        "job_id": job_id,
-        "status": final_status,
-        "source": "full_train",
-        "direction": direction,
-        "scenario_id": normalized.get("scenario_id"),
-        "model": metrics.get("model"),
-        "dataset": metrics.get("dataset"),
-        "metrics": metrics,
-        "warnings": all_warnings,
-        "message": "真实全量训练任务已执行，训练参数来自工作台提交配置。",
-        "partial_reason": partial_reason,
+        "phases": result_pointers,
     }
     write_json(job_dir / "result_pointer.json", result_pointer)
     write_json(job_dir / "metrics_summary.json", metrics_summary)
-
-    finished_at = utc_now()
     update_status(
         job_dir,
         {
@@ -587,16 +728,22 @@ def run_job(job_id: str, payload: Dict[str, Any], job_dir: Path) -> int:
             "progress": 100,
             "finished_at": finished_at,
             "error_message": partial_reason if final_status in {"partial", "failed"} else None,
-            "message": "真实训练已完成。" if final_status == "completed" else "真实训练执行失败。",
+            "message": (
+                "真实训练与方向评估已完成。"
+                if final_status == "completed"
+                else "真实训练完成，但部分方向证据缺失。"
+                if final_status == "partial"
+                else "真实训练执行失败。"
+            ),
             "result_dir": result_dir,
             "artifact_dir": None,
             "source": "full_train",
             "warnings": all_warnings,
         },
     )
-    append_log(job_dir, f"[done] status={final_status}; source=full_train; result_dir={result_dir}.")
+    append_log(job_dir, f"[{final_status}] status={final_status}; source=full_train; result_dir={result_dir}.")
     if partial_reason:
-        append_log(job_dir, f"[warning] {partial_reason}.")
+        append_log(job_dir, f"[warning] missing_evidence={partial_reason}.")
     return 0 if final_status in {"completed", "partial"} else 1
 
 
@@ -621,6 +768,8 @@ def main() -> int:
         return run_job(job_id, payload, job_dir)
     except Exception as exc:  # noqa: BLE001
         now = utc_now()
+        current_status = read_json(job_dir / "status.json", {}) or {}
+        direction = current_status.get("direction")
         append_log(job_dir, f"[failed] {exc}")
         append_log(job_dir, traceback.format_exc().rstrip())
         update_status(
@@ -633,17 +782,30 @@ def main() -> int:
                 "updated_at": now,
                 "finished_at": now,
                 "error_message": str(exc),
+                "failure_stage": current_status.get("failure_stage") or current_status.get("stage") or "prepare",
+                "error_summary": current_status.get("error_summary") or str(exc),
             },
         )
         write_json(
             job_dir / "metrics_summary.json",
             {
+                "schema_version": "workbench-result-v2",
                 "job_id": job_id,
+                "direction": direction,
                 "status": "failed",
-                "source": None,
+                "source": current_status.get("source") or "full_train",
+                "started_at": current_status.get("started_at"),
+                "finished_at": now,
+                "config_summary": {},
+                "training": {},
+                "direction_result": {},
                 "metrics": {},
-                "message": "真实全量训练任务执行失败。",
-                "error_message": str(exc),
+                "warnings": list(current_status.get("warnings") or []),
+                "missing_evidence": [],
+                "partial_reason": None,
+                "failure_stage": current_status.get("failure_stage") or current_status.get("stage") or "prepare",
+                "error_summary": current_status.get("error_summary") or str(exc),
+                "error_detail": current_status.get("error_detail"),
             },
         )
         write_json(
@@ -651,6 +813,7 @@ def main() -> int:
             {
                 "job_id": job_id,
                 "status": "failed",
+                "source": current_status.get("source") or "full_train",
                 "config": "config.json",
                 "status_file": "status.json",
                 "metrics_summary": "metrics_summary.json",

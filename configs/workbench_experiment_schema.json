@@ -157,7 +157,7 @@
   },
   "model_dataset_code_capabilities": {
     "AMAZON_BEAUTY_POC": {
-      "FedAvg": {"status": "code_compatible", "allowed_execution_modes": ["full_train"], "supported_directions": ["recommendation_manipulation", "membership_inference", "update_leakage", "aggregation_defense"], "verification_status": "partially_verified", "verified_directions": ["recommendation_manipulation"], "message": "代码链路完整；推荐操纵已通过真实 1 epoch 训练，其余方向可启动但仍需分别验收。"},
+      "FedAvg": {"status": "code_compatible", "allowed_execution_modes": ["full_train"], "supported_directions": ["recommendation_manipulation", "membership_inference", "update_leakage", "aggregation_defense"], "verification_status": "full_train_verified", "verified_directions": ["recommendation_manipulation", "membership_inference", "update_leakage", "aggregation_defense"], "message": "代码链路完整；四个工作台方向均已通过 Amazon Beauty 真实 1 epoch full_train 验收。"},
       "FedRAP": {"status": "code_compatible", "allowed_execution_modes": ["full_train"], "supported_directions": ["recommendation_manipulation", "membership_inference", "update_leakage", "aggregation_defense"], "verification_status": "construct_only", "verified_directions": [], "message": "模型、trainer、Amazon loader、公共方向 hook 与 exporter 构造审计通过，尚未真实训练验收。"},
       "FedNCF": {"status": "code_compatible", "allowed_execution_modes": ["full_train"], "supported_directions": ["recommendation_manipulation", "membership_inference", "update_leakage", "aggregation_defense"], "verification_status": "construct_only", "verified_directions": [], "message": "模型、trainer、Amazon loader、公共方向 hook 与 exporter 构造审计通过，尚未真实训练验收。"},
       "FCF": {"status": "code_compatible", "allowed_execution_modes": ["full_train"], "supported_directions": ["recommendation_manipulation", "membership_inference", "update_leakage", "aggregation_defense"], "verification_status": "construct_only", "verified_directions": [], "message": "模型、trainer、Amazon loader、公共方向 hook 与 exporter 构造审计通过，尚未真实训练验收。"},
@@ -199,10 +199,13 @@
     "save_topk": {"type": "boolean", "label": "导出 Top50 推荐列表", "default": true, "visible_when": {"direction": "recommendation_manipulation"}},
     "export_artifact": {"type": "boolean", "label": "导出审计结果", "default": true},
     "mia_evidence_source": {"type": "enum", "label": "MIA 证据源", "options": ["rank", "unmasked rank", "checkpoint score", "auto"], "default": "auto", "visible_when": {"direction": "membership_inference"}},
+    "label_source": {"type": "enum", "label": "成员标签来源", "options": ["membership labels", "scenario labels", "auto labels"], "default": "membership labels", "visible_when": {"direction": "membership_inference"}},
+    "threshold_strategy": {"type": "enum", "label": "阈值策略", "options": ["auto", "median", "fixed"], "default": "auto", "visible_when": {"direction": "membership_inference"}, "help_text": "fixed 使用 0.5（逻辑回归概率）或方向归一化后的 0 分界。"},
     "mia_model": {"type": "enum", "label": "MIA 模型", "options": ["threshold", "logistic_probe", "rank_proxy"], "default": "rank_proxy", "visible_when": {"direction": "membership_inference"}},
     "membership_sample_count": {"type": "number", "label": "样本数", "min": 1, "max": 5000, "step": 20, "default": 200, "visible_when": {"direction": "membership_inference"}},
     "member_nonmember_ratio": {"type": "number", "label": "训练/非训练记录比例", "min": 0.1, "max": 10, "step": 0.1, "default": 1, "visible_when": {"direction": "membership_inference"}},
     "update_input_source": {"type": "enum", "label": "输入来源", "options": ["client_update", "participant_params", "item_embedding"], "default": "client_update", "visible_when": {"direction": "update_leakage"}},
+    "candidate_k": {"type": "enum", "label": "返回候选数量", "options": [10, 20, 50], "default": 50, "visible_when": {"direction": "update_leakage"}},
     "candidate_pool_size": {"type": "number", "label": "候选池大小", "min": 10, "max": 5000, "step": 10, "default": 500, "visible_when": {"direction": "update_leakage"}},
     "risk_modality": {"type": "enum", "label": "风险模态", "options": ["item embedding", "image", "text"], "default": "item embedding", "visible_when": {"direction": "update_leakage"}},
     "similarity_method": {"type": "enum", "label": "相似度方法", "options": ["cosine", "dot", "l2"], "default": "cosine", "visible_when": {"direction": "update_leakage"}},

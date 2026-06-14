@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import pickle
@@ -211,8 +212,9 @@ def build_rank_index(files: Sequence[Path], label_metadata: Dict[str, Any]) -> D
     member_items = label_metadata.get("member_items", set())
     non_member_items = label_metadata.get("non_member_items", set())
     for path in files:
+        source_rows = read_csv_rows(path)
         expanded = expand_legacy_topk_rows(
-            read_csv_rows(path),
+            source_rows,
             member_pairs,
             non_member_pairs,
             member_items=member_items,
@@ -233,6 +235,37 @@ def build_rank_index(files: Sequence[Path], label_metadata: Dict[str, Any]) -> D
             }
             index[pair_lookup_key(user_id, item_id)] = payload
             index.setdefault(pair_lookup_key(None, item_id), payload)
+
+        # Legacy TopK exports omit masked training positives. Preserve that real
+        # observation as a censored rank (K + 1) instead of dropping every
+        # member row from the audit. The score remains an explicit rank proxy.
+        labeled_pairs = set(member_pairs).union(set(non_member_pairs))
+        for source_row in source_rows:
+            user_id = row_value(source_row, ("user_id", "client_id", "id", "user"))
+            if user_id in (None, ""):
+                continue
+            top_items = [
+                value
+                for key, value in source_row.items()
+                if str(key).lower().startswith("top_") and value not in (None, "")
+            ]
+            if not top_items:
+                continue
+            censored_rank = len(top_items) + 1
+            prefix = "{}::".format(user_id)
+            for pair in labeled_pairs:
+                if not str(pair).startswith(prefix):
+                    continue
+                item_id = str(pair)[len(prefix):]
+                lookup_key = pair_lookup_key(user_id, item_id)
+                index.setdefault(
+                    lookup_key,
+                    {
+                        "score": 1.0 / (censored_rank + 1.0),
+                        "rank": censored_rank,
+                        "score_source": "rank_proxy_censored",
+                    },
+                )
     return index
 
 
@@ -531,42 +564,120 @@ def auc_from_scores(member_scores: Sequence[float], non_member_scores: Sequence[
     return float(wins / total) if total else None
 
 
-def mia_metrics(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    member_scores = [
-        float(row["score"])
+def _binary_roc(labels: Sequence[int], scores: Sequence[float]) -> List[Dict[str, float]]:
+    positives = sum(labels)
+    negatives = len(labels) - positives
+    if not positives or not negatives:
+        return []
+    thresholds = sorted(set(float(score) for score in scores), reverse=True)
+    if len(thresholds) > 99:
+        step = max(1, len(thresholds) // 99)
+        thresholds = thresholds[::step][:99]
+    points = [{"threshold": float("inf"), "fpr": 0.0, "tpr": 0.0}]
+    for threshold in thresholds:
+        tp = sum(1 for label, score in zip(labels, scores) if label == 1 and score >= threshold)
+        fp = sum(1 for label, score in zip(labels, scores) if label == 0 and score >= threshold)
+        points.append({"threshold": threshold, "fpr": fp / negatives, "tpr": tp / positives})
+    points.append({"threshold": float("-inf"), "fpr": 1.0, "tpr": 1.0})
+    return points
+
+
+def _score_distribution(values: Sequence[float]) -> Dict[str, Any]:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return {"count": 0, "min": None, "max": None, "mean": None, "median": None}
+    middle = len(ordered) // 2
+    median = ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2.0
+    return {
+        "count": len(ordered),
+        "min": ordered[0],
+        "max": ordered[-1],
+        "mean": sum(ordered) / len(ordered),
+        "median": median,
+    }
+
+
+def _fit_logistic(scores: Sequence[float], labels: Sequence[int]) -> List[float]:
+    if not scores:
+        return []
+    mean = sum(scores) / len(scores)
+    variance = sum((score - mean) ** 2 for score in scores) / len(scores)
+    scale = math.sqrt(variance) or 1.0
+    normalized = [(score - mean) / scale for score in scores]
+    weight = 0.0
+    bias = 0.0
+    for _ in range(250):
+        probabilities = [1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, weight * score + bias)))) for score in normalized]
+        grad_weight = sum((probability - label) * score for probability, label, score in zip(probabilities, labels, normalized)) / len(labels)
+        grad_bias = sum(probability - label for probability, label in zip(probabilities, labels)) / len(labels)
+        weight -= 0.08 * grad_weight
+        bias -= 0.08 * grad_bias
+    return [1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, weight * score + bias)))) for score in normalized]
+
+
+def mia_metrics(
+    rows: Sequence[Dict[str, Any]],
+    *,
+    threshold_strategy: str = "auto",
+    mia_model: str = "threshold",
+) -> Dict[str, Any]:
+    scored_rows = [
+        row
         for row in rows
-        if row.get("label") == "member" and to_float(row.get("score")) is not None
+        if row.get("label") in {"member", "non_member"} and to_float(row.get("score")) is not None
     ]
-    non_member_scores = [
-        float(row["score"])
-        for row in rows
-        if row.get("label") == "non_member" and to_float(row.get("score")) is not None
-    ]
+    member_scores = [float(row["score"]) for row in scored_rows if row.get("label") == "member"]
+    non_member_scores = [float(row["score"]) for row in scored_rows if row.get("label") == "non_member"]
     if not member_scores or not non_member_scores:
         return {
             "attack_accuracy": None,
             "attack_auc": None,
+            "precision": None,
+            "recall": None,
+            "f1": None,
             "member_score_gap": None,
+            "decision_threshold": None,
+            "score_direction": None,
+            "roc_curve": [],
+            "score_distribution": {
+                "member": _score_distribution(member_scores),
+                "non_member": _score_distribution(non_member_scores),
+            },
             "risk_level": "not_available",
         }
     member_mean = sum(member_scores) / len(member_scores)
     non_member_mean = sum(non_member_scores) / len(non_member_scores)
-    threshold = (member_mean + non_member_mean) / 2.0
     higher_is_member = member_mean >= non_member_mean
-    correct = 0
-    total = 0
-    for row in rows:
-        score = to_float(row.get("score"))
-        if score is None or row.get("label") not in {"member", "non_member"}:
-            continue
-        predicted_member = score >= threshold if higher_is_member else score <= threshold
-        is_member = row.get("label") == "member"
-        correct += int(predicted_member == is_member)
-        total += 1
-    auc = auc_from_scores(member_scores, non_member_scores)
-    if auc is not None and not higher_is_member:
-        auc = 1.0 - auc
-    accuracy = float(correct / total) if total else None
+    labels = [1 if row.get("label") == "member" else 0 for row in scored_rows]
+    raw_scores = [float(row["score"]) for row in scored_rows]
+    attack_scores = _fit_logistic(raw_scores, labels) if mia_model == "logistic_probe" else [score if higher_is_member else -score for score in raw_scores]
+    if threshold_strategy == "fixed":
+        threshold = 0.5 if mia_model == "logistic_probe" else 0.0
+    elif threshold_strategy == "median":
+        ordered = sorted(attack_scores)
+        middle = len(ordered) // 2
+        threshold = ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2.0
+    else:
+        candidates = sorted(set(attack_scores))
+        threshold = candidates[0]
+        best_accuracy = -1.0
+        for candidate in candidates:
+            accuracy = sum(int((score >= candidate) == bool(label)) for score, label in zip(attack_scores, labels)) / len(labels)
+            if accuracy > best_accuracy:
+                threshold = candidate
+                best_accuracy = accuracy
+    predictions = [1 if score >= threshold else 0 for score in attack_scores]
+    tp = sum(1 for label, prediction in zip(labels, predictions) if label == 1 and prediction == 1)
+    tn = sum(1 for label, prediction in zip(labels, predictions) if label == 0 and prediction == 0)
+    fp = sum(1 for label, prediction in zip(labels, predictions) if label == 0 and prediction == 1)
+    fn = sum(1 for label, prediction in zip(labels, predictions) if label == 1 and prediction == 0)
+    accuracy = (tp + tn) / len(labels)
+    precision = tp / (tp + fp) if tp + fp else None
+    recall = tp / (tp + fn) if tp + fn else None
+    f1 = 2 * precision * recall / (precision + recall) if precision is not None and recall is not None and precision + recall else None
+    positive_scores = [score for score, label in zip(attack_scores, labels) if label == 1]
+    negative_scores = [score for score, label in zip(attack_scores, labels) if label == 0]
+    auc = auc_from_scores(positive_scores, negative_scores)
     gap = float(member_mean - non_member_mean)
     risk_level = "low"
     if accuracy is not None and accuracy >= 0.75 and auc is not None and auc >= 0.75:
@@ -576,7 +687,17 @@ def mia_metrics(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "attack_accuracy": accuracy,
         "attack_auc": auc,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
         "member_score_gap": gap,
+        "decision_threshold": threshold,
+        "score_direction": "higher_is_member" if higher_is_member else "lower_is_member",
+        "roc_curve": _binary_roc(labels, attack_scores),
+        "score_distribution": {
+            "member": _score_distribution(member_scores),
+            "non_member": _score_distribution(non_member_scores),
+        },
         "risk_level": risk_level,
     }
 
@@ -589,6 +710,8 @@ def summarize(
     checkpoint_summary: Optional[Dict[str, Any]] = None,
     unmasked_rank_available: bool = False,
     score_mode: str = "auto",
+    threshold_strategy: str = "auto",
+    mia_model: str = "threshold",
 ) -> Dict[str, Any]:
     scored = [row for row in rows if row.get("score") not in (None, "")]
     ranked = [row for row in rows if row.get("rank") not in (None, "")]
@@ -604,7 +727,7 @@ def summarize(
         checkpoint_warning = "checkpoint scoring unavailable: {}".format(
             checkpoint_summary.get("missing_reason") or "unsupported checkpoint"
         )
-    metrics = mia_metrics(rows)
+    metrics = mia_metrics(rows, threshold_strategy=threshold_strategy, mia_model=mia_model)
     score_source = "mixed" if len(sources) > 1 else sources[0] if sources else None
     proxy_only = bool(score_source in {"rank_proxy", "unmasked_rank"} or (sources and all(source in {"rank_proxy", "unmasked_rank"} for source in sources)))
     return {
@@ -630,7 +753,16 @@ def summarize(
         "checkpoint_scoring": checkpoint_summary or None,
         "attack_accuracy": metrics["attack_accuracy"],
         "attack_auc": metrics["attack_auc"],
+        "precision": metrics["precision"],
+        "recall": metrics["recall"],
+        "f1": metrics["f1"],
         "member_score_gap": metrics["member_score_gap"],
+        "decision_threshold": metrics["decision_threshold"],
+        "score_direction": metrics["score_direction"],
+        "threshold_strategy": threshold_strategy,
+        "mia_model": mia_model,
+        "roc_curve": metrics["roc_curve"],
+        "score_distribution": metrics["score_distribution"],
         "risk_level": metrics["risk_level"],
         "proxy_only": proxy_only,
         "feasibility": {
@@ -683,6 +815,9 @@ def run_export(
     model: Optional[str] = None,
     dataset: Optional[str] = None,
     score_mode: str = "auto",
+    threshold_strategy: str = "auto",
+    mia_model: str = "threshold",
+    anonymize_salt: Optional[str] = None,
 ) -> Dict[str, Any]:
     label_metadata = load_membership_labels(membership_labels)
     warnings = list(label_metadata.get("warnings", []))
@@ -706,6 +841,12 @@ def run_export(
         unmasked_rank_index=unmasked_rank_index,
         score_mode=score_mode,
     )
+    if anonymize_salt:
+        for row in output_rows:
+            raw_user_id = str(row.get("user_id") or "")
+            if raw_user_id:
+                digest = hashlib.sha256("{}:{}".format(anonymize_salt, raw_user_id).encode("utf-8")).hexdigest()
+                row["user_id"] = "subject_{}".format(digest[:10])
     summary = summarize(
         output_rows,
         label_metadata,
@@ -714,6 +855,8 @@ def run_export(
         checkpoint_summary=checkpoint_summary,
         unmasked_rank_available=bool(unmasked_rank_index),
         score_mode=score_mode,
+        threshold_strategy=threshold_strategy,
+        mia_model=mia_model,
     )
     summary["membership_labels"] = str(membership_labels)
     summary["score_files"] = [str(path) for path in score_files]

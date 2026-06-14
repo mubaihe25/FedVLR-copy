@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -65,13 +66,19 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
             self._config_get(
                 config,
                 "interaction_reconstruction_topk",
-                self._config_get(config, "topk", 10),
+                self._config_get(config, "candidate_k", self._config_get(config, "topk", 10)),
             )
         )
         self.min_rows = int(self._config_get(config, "min_item_rows", 2))
         self.train_interaction_file = self._config_get(config, "interaction_file", None)
         self.dataset = self._config_get(config, "dataset", None)
         self.data_path = self._config_get(config, "data_path", None)
+        self.audit_client_count = max(1, int(self._config_get(config, "audit_client_count", self._config_get(config, "client_count", 5))))
+        self.candidate_pool_size = max(self.topk, int(self._config_get(config, "candidate_pool_size", 500)))
+        self.input_source = str(self._config_get(config, "update_input_source", "client_update"))
+        self.target_modality = str(self._config_get(config, "risk_modality", "item embedding")).replace(" ", "_").lower()
+        self.similarity_method = str(self._config_get(config, "similarity_method", "cosine")).lower()
+        self.anonymize_salt = str(self._config_get(config, "workbench_job_id", self._config_get(config, "seed", "workbench")))
         self.history: List[Dict[str, Any]] = []
 
     @staticmethod
@@ -143,6 +150,23 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
                 norms.append(total ** 0.5)
         return norms
 
+    def _row_scores(self, tensor: Any) -> List[float]:
+        if self.similarity_method == "l2":
+            return self._row_norms(tensor)
+        if torch is not None and torch.is_tensor(tensor):
+            rows = tensor.reshape(tensor.shape[0], -1).float()
+            reference = rows.mean(dim=0)
+            if self.similarity_method == "dot":
+                return [float(value) for value in torch.mv(rows, reference).tolist()]
+            reference_norm = torch.norm(reference).clamp_min(1e-12)
+            row_norms = torch.norm(rows, dim=1).clamp_min(1e-12)
+            return [float(value) for value in (torch.mv(rows, reference) / (row_norms * reference_norm)).tolist()]
+        return self._row_norms(tensor)
+
+    def _client_alias(self, client_id: Any) -> str:
+        digest = hashlib.sha256("{}:{}".format(self.anonymize_salt, client_id).encode("utf-8")).hexdigest()
+        return "client_{}".format(digest[:10])
+
     @staticmethod
     def _modality_for_path(path: str) -> str:
         normalized = path.lower()
@@ -180,9 +204,17 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         modality_tensor_counts: Dict[str, int] = {}
         embedding_tensor_count = 0
         client_count = 0
-        for client_id, update in participant_params.items():
-            client_id_str = str(client_id)
+        scoped_clients = sorted(participant_params.items(), key=lambda item: str(item[0]))[: self.audit_client_count]
+        for client_id, update in scoped_clients:
+            client_id_str = self._client_alias(client_id)
             tensors = self._walk_item_tensors(update, path="client_{}".format(client_id))
+            if self.target_modality in {"item_embedding", "image", "text"}:
+                tensors = [
+                    (path, tensor)
+                    for path, tensor in tensors
+                    if self._modality_for_path(path) == self.target_modality
+                    or (self.target_modality == "item_embedding" and self._modality_for_path(path) == "item_like_update")
+                ]
             if not tensors:
                 continue
             client_count += 1
@@ -192,7 +224,7 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
                 modality = self._modality_for_path(path)
                 modality_tensor_counts[modality] = modality_tensor_counts.get(modality, 0) + 1
                 scoped_modality_scores = modality_scores.setdefault(modality, {})
-                for item_index, value in enumerate(self._row_norms(tensor)):
+                for item_index, value in enumerate(self._row_scores(tensor)):
                     item_id = str(item_index)
                     scores[item_id] = max(scores.get(item_id, 0.0), float(value))
                     client_scores[item_id] = max(client_scores.get(item_id, 0.0), float(value))
@@ -201,7 +233,7 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
                         float(value),
                     )
         per_client_candidates = {
-            client_id: self._top_candidates(client_scores, self.topk)
+            client_id: self._top_candidates(dict(sorted(client_scores.items(), key=lambda item: item[1], reverse=True)[: self.candidate_pool_size]), self.topk)
             for client_id, client_scores in sorted(per_client_scores.items())
         }
         modality_breakdown = {
@@ -223,10 +255,11 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         return None
 
     def _round_train_items(self, round_state: MutableMapping[str, Any]) -> Tuple[Set[str], Dict[str, Any]]:
-        participant_clients = {
-            str(client_id)
-            for client_id in round_state.get("sampled_clients", [])
-        }
+        participant_clients = sorted(
+            (str(client_id) for client_id in round_state.get("sampled_clients", [])),
+            key=str,
+        )[: self.audit_client_count]
+        participant_client_set = set(participant_clients)
         train_file = self._default_train_file()
         metadata = {
             "train_interaction_file": str(train_file) if train_file else None,
@@ -241,17 +274,25 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         except Exception:
             return set(), metadata
         items: Set[str] = set()
+        per_client_items: Dict[str, Set[str]] = {
+            self._client_alias(client_id): set() for client_id in participant_clients
+        }
         for row in rows:
             if row.get("split_label") not in (None, "", "0"):
                 continue
             user_id = row.get("userID") or row.get("user_id") or row.get("user")
-            if participant_clients and str(user_id) not in participant_clients:
+            if participant_client_set and str(user_id) not in participant_client_set:
                 continue
             item_id = row.get("itemID") or row.get("item_id") or row.get("item")
             if item_id not in (None, ""):
                 items.add(str(item_id))
+                per_client_items.setdefault(self._client_alias(user_id), set()).add(str(item_id))
         metadata["train_item_reference_available"] = bool(items)
         metadata["train_item_reference_count"] = len(items)
+        metadata["per_client_train_items"] = {
+            client_id: sorted(values, key=lambda value: (len(value), value))
+            for client_id, values in per_client_items.items()
+        }
         return items, metadata
 
     @staticmethod
@@ -268,6 +309,7 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         self,
         participant_params: Any,
         train_item_ids: Optional[Set[str]] = None,
+        per_client_train_items: Optional[Dict[str, Sequence[str]]] = None,
         source: str = "real_participant_params",
     ) -> Dict[str, Any]:
         (
@@ -303,12 +345,29 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
                 "note": "interaction candidate reconstruction only; not full user history recovery or image DLG",
             }
 
-        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)[: self.topk]
+        pool = sorted(scores.items(), key=lambda item: item[1], reverse=True)[: self.candidate_pool_size]
+        ranked = pool[: self.topk]
         candidate_ids = [item_id for item_id, _ in ranked]
-        hit_at_k = self._hit_at(candidate_ids, train_item_ids, self.topk)
-        hit_at_10 = self._hit_at(candidate_ids, train_item_ids, 10)
-        hit_at_20 = self._hit_at(candidate_ids, train_item_ids, 20)
-        hit_at_50 = self._hit_at(candidate_ids, train_item_ids, 50)
+        per_client_train_items = per_client_train_items or {}
+        detailed_clients: Dict[str, Dict[str, Any]] = {}
+        for client_id, candidates in per_client_candidates.items():
+            true_items = {str(item) for item in per_client_train_items.get(client_id, [])}
+            client_candidate_ids = [str(item.get("item_id")) for item in candidates]
+            detailed_clients[client_id] = {
+                "client_id": client_id,
+                "true_item_ids": sorted(true_items, key=lambda value: (len(value), value)),
+                "candidates": candidates,
+                "hit_at_10": float(any(item in true_items for item in client_candidate_ids[:10])) if true_items else None,
+                "hit_at_20": float(any(item in true_items for item in client_candidate_ids[:20])) if true_items else None,
+                "hit_at_50": float(any(item in true_items for item in client_candidate_ids[:50])) if true_items else None,
+            }
+        def average_client_hit(key: str) -> Optional[float]:
+            values = [float(item[key]) for item in detailed_clients.values() if item.get(key) is not None]
+            return sum(values) / len(values) if values else None
+        hit_at_10 = average_client_hit("hit_at_10")
+        hit_at_20 = average_client_hit("hit_at_20")
+        hit_at_50 = average_client_hit("hit_at_50")
+        hit_at_k = {10: hit_at_10, 20: hit_at_20, 50: hit_at_50}.get(self.topk, self._hit_at(candidate_ids, train_item_ids, self.topk))
         highest_risk_modality = None
         if modality_breakdown:
             highest_risk_modality = max(
@@ -323,15 +382,21 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
             "summary_type": "interaction_reconstruction_summary",
             "status": "available",
             "source": source,
+            "input_source": self.input_source,
+            "target_modality": self.target_modality,
+            "similarity_method": self.similarity_method,
             "client_count": client_count,
+            "audit_client_count": client_count,
             "embedding_tensor_count": embedding_tensor_count,
+            "candidate_pool_size": len(pool),
             "candidate_item_count": len(candidate_ids),
+            "returned_candidate_count": len(candidate_ids),
             "candidate_item_ids": candidate_ids,
             "candidate_scores": [
                 {"item_id": item_id, "score": score, "rank": index + 1}
                 for index, (item_id, score) in enumerate(ranked)
             ],
-            "per_client_candidates": per_client_candidates,
+            "per_client_candidates": detailed_clients,
             "hit_at_k": hit_at_k,
             "hit_at_10": hit_at_10,
             "hit_at_20": hit_at_20,
@@ -356,8 +421,10 @@ class InteractionReconstructionProbe(BasePrivacyMetric):
         summary = self.evaluate_updates(
             participant_params,
             train_item_ids=train_items,
+            per_client_train_items=reference_metadata.get("per_client_train_items", {}),
             source="real_participant_params",
         )
+        reference_metadata.pop("per_client_train_items", None)
         summary.update(reference_metadata)
         if summary.get("status") == "available" and summary.get("hit_at_k") is None:
             summary.setdefault("warnings", []).append(
